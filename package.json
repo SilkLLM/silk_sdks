@@ -1,0 +1,9 @@
+{
+  "name": "silkllm-sdks",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev":   "pnpm -r run dev"
+  }
+}

@@ -1,0 +1,240 @@
+"""
+client.py
+SilkLLM Python SDK — main client class.
+Provides a clean interface to the SilkLLM API: generate, stream, list models, check balance.
+"""
+
+# File: silkllm-sdks/packages/python/silkllm/client.py
+
+import os
+from typing import Optional, List, Dict, Any, Generator
+import httpx
+
+from silkllm.types import (
+    GenerateResponse, StreamChunk, ModelsResponse,
+    BalanceResponse, UsageResponse, Message
+)
+from silkllm.exceptions import (
+    SilkLLMError, AuthenticationError, InsufficientBalanceError,
+    ModelNotFoundError, RateLimitError, ProviderError
+)
+
+
+class Client:
+    """
+    SilkLLM Python SDK client.
+
+    Usage:
+        import silkllm
+        client = silkllm.Client(api_key="silk_...")
+        response = client.generate(
+            messages=[{"role": "user", "content": "Hello!"}]
+        )
+        print(response.content)
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        base_url: str = "https://api.silkllm.com",
+        timeout: float = 60.0,
+    ):
+        """
+        Initialize the SilkLLM client.
+
+        Args:
+            api_key: Your SilkLLM API key (starts with silk_).
+                     Reads from SILKLLM_API_KEY env var if not provided.
+            base_url: API base URL. Override for self-hosted deployments.
+            timeout:  Request timeout in seconds.
+        """
+        self.api_key = api_key or os.environ.get("SILKLLM_API_KEY")
+        if not self.api_key:
+            raise AuthenticationError(
+                "No API key provided. Pass api_key= or set the SILKLLM_API_KEY env var."
+            )
+        self.base_url = base_url.rstrip("/")
+        self._client = httpx.Client(
+            base_url=self.base_url,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "silkllm-python/1.0.0",
+            },
+            timeout=timeout,
+        )
+
+    def generate(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> GenerateResponse:
+        """
+        Generate a completion (non-streaming).
+
+        Args:
+            messages:    List of message dicts: [{"role": "user", "content": "..."}]
+                         Roles: "user", "assistant", "system"
+            model:       Optional. Specific model ID e.g. "gpt-4o", "claude-3-5-sonnet-20241022"
+            provider:    Optional. Specific provider e.g. "openai", "anthropic"
+            temperature: Sampling temperature 0.0–2.0 (default 0.7)
+            max_tokens:  Maximum tokens to generate (default 2048)
+
+        Returns:
+            GenerateResponse with .content, .model, .usage, .cost_usd, .balance_after
+
+        Raises:
+            InsufficientBalanceError: Not enough credits.
+            ModelNotFoundError:       Requested model not available.
+            ProviderError:            All providers failed.
+            AuthenticationError:      Invalid API key.
+            RateLimitError:           Too many requests.
+        """
+        payload = {
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        if model:    payload["model"] = model
+        if provider: payload["provider"] = provider
+
+        response = self._request("POST", "/api/generate", json=payload)
+        return GenerateResponse(**response)
+
+    def stream(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> Generator[str, None, None]:
+        """
+        Generate a completion with streaming (yields text chunks).
+
+        Args:
+            Same as generate(), except returns a generator of string chunks.
+
+        Usage:
+            for chunk in client.stream(messages=[...]):
+                print(chunk, end="", flush=True)
+        """
+        payload = {
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        if model:    payload["model"] = model
+        if provider: payload["provider"] = provider
+
+        import json
+        with self._client.stream("POST", "/api/generate", json=payload) as response:
+            self._check_response(response)
+            for line in response.iter_lines():
+                if line.startswith("data: "):
+                    data_str = line[6:]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(data_str)
+                        if "content" in data:
+                            yield data["content"]
+                        elif "error" in data:
+                            raise ProviderError(data["error"])
+                    except json.JSONDecodeError:
+                        continue
+
+    def models(self, provider: Optional[str] = None) -> ModelsResponse:
+        """
+        List all available models.
+
+        Args:
+            provider: Optional. Filter by provider e.g. "openai".
+
+        Returns:
+            ModelsResponse with .models list and .total count.
+        """
+        params = {}
+        if provider: params["provider"] = provider
+        response = self._request("GET", "/api/models", params=params)
+        return ModelsResponse(**response)
+
+    def balance(self) -> BalanceResponse:
+        """
+        Get your current credit balance.
+
+        Returns:
+            BalanceResponse with .balance_usd
+        """
+        response = self._request("GET", "/api/balance")
+        return BalanceResponse(**response)
+
+    def usage(self, page: int = 1, page_size: int = 20) -> UsageResponse:
+        """
+        Get your usage and transaction history (paginated).
+
+        Args:
+            page:      Page number (default 1)
+            page_size: Items per page (default 20, max 100)
+
+        Returns:
+            UsageResponse with .entries list, .total, .page, .page_size
+        """
+        response = self._request("GET", "/api/usage", params={"page": page, "page_size": page_size})
+        return UsageResponse(**response)
+
+    def _request(self, method: str, path: str, **kwargs) -> dict:
+        """Make an HTTP request and handle errors uniformly."""
+        try:
+            response = self._client.request(method, path, **kwargs)
+            self._check_response(response)
+            return response.json()
+        except httpx.TimeoutException:
+            raise SilkLLMError("Request timed out. Try again or increase the timeout.")
+        except httpx.NetworkError as e:
+            raise SilkLLMError(f"Network error: {e}")
+
+    def _check_response(self, response: httpx.Response):
+        """Raise the appropriate exception for non-2xx responses."""
+        if response.status_code < 300:
+            return
+        try:
+            error = response.json().get("error", {})
+            code    = error.get("code", "unknown")
+            message = error.get("message", "Unknown error")
+        except Exception:
+            code, message = "unknown", response.text
+
+        if response.status_code == 401:
+            raise AuthenticationError(message)
+        elif response.status_code == 402:
+            raise InsufficientBalanceError(message)
+        elif response.status_code == 404:
+            raise ModelNotFoundError(message)
+        elif response.status_code == 429:
+            raise RateLimitError(message)
+        elif response.status_code == 502:
+            raise ProviderError(message)
+        else:
+            raise SilkLLMError(f"[{code}] {message}")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self._client.close()
+
+    def close(self):
+        """Close the underlying HTTP client."""
+        self._client.close()
+
+
+# Convenience alias — lets users do: silkllm.Client(...)
+__all__ = ["Client"]
+
+# EOF silkllm-sdks/packages/python/silkllm/client.py
