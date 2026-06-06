@@ -1,58 +1,47 @@
-/**
- * client.ts
- * SilkLLM JavaScript/TypeScript SDK.
- * Works in Node.js (>=18) and modern browsers.
- */
-
-// File: silkllm-sdks/packages/javascript/src/client.ts
-
-import type {
-  GenerateOptions, GenerateResponse, ModelsResponse,
-  BalanceResponse, UsageResponse,
-} from "./types";
-
-export class SilkLLMError extends Error {
-  constructor(public code: string, message: string) {
+// src/client.ts
+var SilkLLMError = class extends Error {
+  constructor(code, message) {
     super(message);
+    this.code = code;
     this.name = "SilkLLMError";
   }
-}
-export class AuthenticationError extends SilkLLMError {}
-export class InsufficientBalanceError extends SilkLLMError {}
-export class ModelNotFoundError extends SilkLLMError {}
-export class RateLimitError extends SilkLLMError {}
-export class ProviderError extends SilkLLMError {}
-
-export class SilkLLM {
-  private apiKey: string;
-  private baseUrl: string;
-
+  code;
+};
+var AuthenticationError = class extends SilkLLMError {
+};
+var InsufficientBalanceError = class extends SilkLLMError {
+};
+var ModelNotFoundError = class extends SilkLLMError {
+};
+var RateLimitError = class extends SilkLLMError {
+};
+var ProviderError = class extends SilkLLMError {
+};
+var SilkLLM = class {
+  apiKey;
+  baseUrl;
   /**
    * @param options.apiKey   Your silk_ API key (or SILKLLM_API_KEY env var)
    * @param options.baseUrl  For self-hosted, e.g. "http://localhost:8000" (no trailing slash, no /api)
    */
-  constructor(options: { apiKey?: string; baseUrl?: string } = {}) {
-    this.apiKey = options.apiKey
-      || (typeof process !== "undefined" ? process.env.SILKLLM_API_KEY || "" : "");
+  constructor(options = {}) {
+    this.apiKey = options.apiKey || (typeof process !== "undefined" ? process.env.SILKLLM_API_KEY || "" : "");
     if (!this.apiKey) throw new AuthenticationError("auth_error", "No API key provided.");
-
     this.baseUrl = (options.baseUrl || process.env.SILKLLM_BASE_URL || "https://silkllm.onrender.com").replace(/\/$/, "");
   }
-
-  async generate(options: GenerateOptions): Promise<GenerateResponse> {
+  async generate(options) {
     const body = { ...options, stream: false };
-    return this._request("POST", "/api/generate", body) as Promise<GenerateResponse>;
+    return this._request("POST", "/api/generate", body);
   }
-
-  async *stream(options: GenerateOptions): AsyncGenerator<string> {
+  async *stream(options) {
     const body = { ...options, stream: true };
     const response = await fetch(`${this.baseUrl}/api/generate`, {
       method: "POST",
       headers: this._headers(),
-      body: JSON.stringify(body),
+      body: JSON.stringify(body)
     });
     if (!response.ok) await this._handleError(response);
-    const reader = response.body!.getReader();
+    const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     while (true) {
@@ -68,49 +57,45 @@ export class SilkLLM {
           try {
             const parsed = JSON.parse(data);
             if (parsed.content) yield parsed.content;
-          } catch {}
+          } catch {
+          }
         }
       }
     }
   }
-
-  async models(provider?: string): Promise<ModelsResponse> {
+  async models(provider) {
     const params = provider ? `?provider=${provider}` : "";
-    return this._request("GET", `/api/models${params}`) as Promise<ModelsResponse>;
+    return this._request("GET", `/api/models${params}`);
   }
-
-  async balance(): Promise<BalanceResponse> {
-    return this._request("GET", "/api/balance") as Promise<BalanceResponse>;
+  async balance() {
+    return this._request("GET", "/api/balance");
   }
-
-  async usage(page = 1, pageSize = 20): Promise<UsageResponse> {
-    return this._request("GET", `/api/usage?page=${page}&page_size=${pageSize}`) as Promise<UsageResponse>;
+  async usage(page = 1, pageSize = 20) {
+    return this._request("GET", `/api/usage?page=${page}&page_size=${pageSize}`);
   }
-
-  private _headers(): Record<string, string> {
+  _headers() {
     return {
       "Authorization": `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
-      "User-Agent": "silkllm-js/1.0.0",
+      "User-Agent": "silkllm-js/1.0.0"
     };
   }
-
-  private async _request(method: string, path: string, body?: unknown): Promise<unknown> {
+  async _request(method, path, body) {
     const response = await fetch(`${this.baseUrl}${path}`, {
       method,
       headers: this._headers(),
-      body: body ? JSON.stringify(body) : undefined,
+      body: body ? JSON.stringify(body) : void 0
     });
     if (!response.ok) await this._handleError(response);
     return response.json();
   }
-
-  private async _handleError(response: Response): Promise<never> {
+  async _handleError(response) {
     let detail = "Unknown error";
     try {
       const data = await response.json();
       detail = data.detail || data.message || JSON.stringify(data);
-    } catch {}
+    } catch {
+    }
     const status = response.status;
     if (status === 401) throw new AuthenticationError("auth_error", detail);
     if (status === 402) throw new InsufficientBalanceError("insufficient_balance", detail);
@@ -119,8 +104,14 @@ export class SilkLLM {
     if (status === 502) throw new ProviderError("provider_error", detail);
     throw new SilkLLMError("unknown", detail);
   }
-}
-
-export default SilkLLM;
-
-// EOF silkllm-sdks/packages/javascript/src/client.ts
+};
+export {
+  AuthenticationError,
+  InsufficientBalanceError,
+  ModelNotFoundError,
+  ProviderError,
+  RateLimitError,
+  SilkLLM,
+  SilkLLMError,
+  SilkLLM as default
+};

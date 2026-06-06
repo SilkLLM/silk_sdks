@@ -4,16 +4,23 @@
   "description": "One unified API for OpenAI, Anthropic, Google, DeepSeek, and xAI with simple fiat billing.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "exports": { ".": { "import": "./dist/index.js", "require": "./dist/index.cjs" } },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch"
   },
-  "dependencies": {},
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "tsup": "^8.1.0"
+    "@types/node": "^25.9.1",
+    "tsup": "^8.1.0",
+    "typescript": "^5.4.0"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "license": "MIT"
 }

@@ -3,14 +3,17 @@
  * Simple Node.js example using the SilkLLM JavaScript SDK.
  *
  * Usage:
- *   SILKLLM_API_KEY=silk_your_key node basic_chat.js
+ *   SILKLLM_API_KEY=silk_your_key SILKLLM_BASE_URL=http://localhost:8000 node basic_chat.js
  */
 
 // File: silkllm-sdks/packages/javascript/examples/basic_chat.js
 
-import SilkLLM from "silkllm";
+import { SilkLLM } from "silkllm";
 
-const client = new SilkLLM({ apiKey: process.env.SILKLLM_API_KEY });
+const client = new SilkLLM({
+  apiKey: process.env.SILKLLM_API_KEY,
+  baseUrl: process.env.SILKLLM_BASE_URL,   // local backend: "http://localhost:8000"
+});
 
 const response = await client.generate({
   messages: [

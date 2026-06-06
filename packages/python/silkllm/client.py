@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any, Generator
 import httpx
 
 from silkllm.types import (
-    GenerateResponse, StreamChunk, ModelsResponse,
+    GenerateResponse, ModelsResponse,
     BalanceResponse, UsageResponse, Message
 )
 from silkllm.exceptions import (
@@ -26,7 +26,7 @@ class Client:
 
     Usage:
         import silkllm
-        client = silkllm.Client(api_key="silk_...")
+        client = silkllm.Client(api_key="silk_...", base_url="https://silkllm.onrender.com")
         response = client.generate(
             messages=[{"role": "user", "content": "Hello!"}]
         )
@@ -36,7 +36,7 @@ class Client:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        base_url: str = "https://api.silkllm.com",
+        base_url: str = "https://silkllm.onrender.com",
         timeout: float = 60.0,
     ):
         """
@@ -45,7 +45,8 @@ class Client:
         Args:
             api_key: Your SilkLLM API key (starts with silk_).
                      Reads from SILKLLM_API_KEY env var if not provided.
-            base_url: API base URL. Override for self-hosted deployments.
+            base_url: API base URL. DO NOT include '/api' (e.g., "http://localhost:8000").
+                      Defaults to https://silkllm.onrender.com.
             timeout:  Request timeout in seconds.
         """
         self.api_key = api_key or os.environ.get("SILKLLM_API_KEY")
@@ -234,7 +235,6 @@ class Client:
         self._client.close()
 
 
-# Convenience alias — lets users do: silkllm.Client(...)
 __all__ = ["Client"]
 
 # EOF silkllm-sdks/packages/python/silkllm/client.py

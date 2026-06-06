@@ -27,5 +27,3 @@ const client = new SilkLLM({ apiKey: "silk_..." });
 const response = await client.generate({ messages: [{ role: "user", content: "Hello!" }] });
 console.log(response.content);
 ```
-
-See master **Guide.md** for full documentation.

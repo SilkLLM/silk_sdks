@@ -3,14 +3,17 @@
  * Node.js streaming example — prints each chunk as it arrives.
  *
  * Usage:
- *   SILKLLM_API_KEY=silk_your_key node streaming.js
+ *   SILKLLM_API_KEY=silk_your_key SILKLLM_BASE_URL=http://localhost:8000 node streaming.js
  */
 
 // File: silkllm-sdks/packages/javascript/examples/streaming.js
 
-import SilkLLM from "silkllm";
+import { SilkLLM } from "silkllm";
 
-const client = new SilkLLM({ apiKey: process.env.SILKLLM_API_KEY });
+const client = new SilkLLM({
+  apiKey: process.env.SILKLLM_API_KEY,
+  baseUrl: process.env.SILKLLM_BASE_URL,
+});
 
 process.stdout.write("Assistant: ");
 
