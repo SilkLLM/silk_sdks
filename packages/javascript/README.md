@@ -222,6 +222,15 @@ const speech = await client.generateAudio({
   output_format: "mp3_44100_128",
 });
 
+// Clone a voice, then convert a clip into it (speech-to-speech)
+import { readFileSync } from "node:fs";
+const clone = await client.cloneVoice({ name: "My voice", samples: [readFileSync("sample1.mp3")] });
+const converted = await client.speechToSpeech({
+  audio: readFileSync("recording.mp3"),
+  voice: clone.voice_id,
+  seconds: 12,
+});
+
 // List models with modality
 for (const m of (await client.models()).models) {
   console.log(m.id, m.modality, m.is_free ? "free" : "paid");

@@ -102,6 +102,35 @@ export interface VoicesResponse {
   voices: Voice[];
 }
 
+export type AudioInput = Blob | Uint8Array | ArrayBuffer;
+
+export interface SpeechToSpeechOptions {
+  /** Source audio clip to convert. */
+  audio: AudioInput;
+  /** Target ElevenLabs voice_id (may be a cloned voice). */
+  voice: string;
+  model?: string;
+  output_format?: string;
+  /** Approximate source duration in seconds (used for pricing). */
+  seconds?: number;
+  voice_settings?: VoiceSettings;
+  filename?: string;
+  contentType?: string;
+}
+
+export interface CloneVoiceOptions {
+  name: string;
+  /** One or more clean audio samples. */
+  samples: AudioInput[];
+  description?: string;
+}
+
+export interface CloneVoiceResult {
+  voice_id: string | null;
+  name: string;
+  requires_verification?: boolean;
+}
+
 export interface VideoResult {
   video_url: string | null;
   model: string;

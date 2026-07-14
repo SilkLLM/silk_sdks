@@ -21,6 +21,18 @@ from silkllm.exceptions import (
 )
 
 
+def _read_bytes(source: Any) -> bytes:
+    """Read audio input given as a file path, raw bytes, or a file-like object."""
+    if isinstance(source, (bytes, bytearray)):
+        return bytes(source)
+    if isinstance(source, str):
+        with open(source, "rb") as f:
+            return f.read()
+    if hasattr(source, "read"):
+        return source.read()
+    raise SilkLLMError("Audio must be a file path, bytes, or a file-like object.")
+
+
 class Client:
     """
     SilkLLM Python SDK client.
@@ -231,6 +243,42 @@ class Client:
         resp = self._request("GET", "/api/generate/audio/voices", params={"provider": provider})
         return [Voice(**v) for v in resp.get("voices", [])]
 
+    def speech_to_speech(
+        self, audio, voice: str, model: Optional[str] = None, output_format: Optional[str] = None,
+        seconds: int = 10, voice_settings: Optional[VoiceSettings] = None,
+        filename: str = "input.mp3", content_type: str = "audio/mpeg",
+    ) -> AudioResult:
+        """
+        Voice conversion (speech-to-speech): convert a source audio clip into the
+        same speech spoken by `voice` (an ElevenLabs voice_id, possibly a cloned
+        one). `audio` is a file path or raw bytes.
+        """
+        data = _read_bytes(audio)
+        form: Dict[str, Any] = {"voice": voice, "seconds": str(seconds)}
+        if model:         form["model"] = model
+        if output_format: form["output_format"] = output_format
+        if voice_settings is not None:
+            vs = voice_settings.to_dict() if isinstance(voice_settings, VoiceSettings) else dict(voice_settings)
+            for k in ("stability", "similarity_boost", "style"):
+                if vs.get(k) is not None: form[k] = str(vs[k])
+            if vs.get("use_speaker_boost") is not None:
+                form["use_speaker_boost"] = str(bool(vs["use_speaker_boost"])).lower()
+        files = {"audio": (filename, data, content_type)}
+        return AudioResult(**self._request_multipart("POST", "/api/generate/audio/speech-to-speech", form, files))
+
+    def clone_voice(self, name: str, samples: List[Any], description: str = "") -> Dict[str, Any]:
+        """
+        Create an instant voice clone from one or more audio samples (file paths
+        or raw bytes). Returns {"voice_id", "name", ...}; use the voice_id as a
+        speaker for generate_audio or speech_to_speech.
+        """
+        form: Dict[str, Any] = {"name": name}
+        if description: form["description"] = description
+        files = [("files", (f"sample_{i}.mp3", _read_bytes(s), "audio/mpeg")) for i, s in enumerate(samples)]
+        if not files:
+            raise SilkLLMError("At least one audio sample is required to clone a voice.")
+        return self._request_multipart("POST", "/api/generate/audio/clone-voice", form, files)
+
     def generate_video(
         self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None,
         seconds: int = 5,
@@ -311,6 +359,24 @@ class Client:
         """Make an HTTP request and handle errors uniformly."""
         try:
             response = self._client.request(method, path, **kwargs)
+            self._check_response(response)
+            return response.json()
+        except httpx.TimeoutException:
+            raise SilkLLMError("Request timed out. Try again or increase the timeout.")
+        except httpx.NetworkError as e:
+            raise SilkLLMError(f"Network error: {e}")
+
+    def _request_multipart(self, method: str, path: str, data: dict, files) -> dict:
+        """
+        Send a multipart/form-data request (file uploads). Uses a fresh request so
+        the client's default JSON Content-Type does not clobber the multipart
+        boundary; auth is still applied.
+        """
+        headers = {"Authorization": f"Bearer {self.api_key}", "User-Agent": "silkllm-python/1.0.0"}
+        try:
+            response = httpx.request(
+                method, f"{self.base_url}{path}", data=data, files=files, headers=headers, timeout=180.0
+            )
             self._check_response(response)
             return response.json()
         except httpx.TimeoutException:

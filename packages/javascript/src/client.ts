@@ -11,7 +11,7 @@ import type {
   BalanceResponse, UsageResponse, ProviderKey, DepositProviderKeyOptions,
   UpdateProviderKeyOptions, TrialStatus,
   ImageResult, AudioResult, VideoResult, ImageOptions, AudioOptions, VideoOptions,
-  VoicesResponse, ContentPart,
+  VoicesResponse, ContentPart, SpeechToSpeechOptions, CloneVoiceOptions, CloneVoiceResult, AudioInput,
 } from "./types";
 
 // ── Multimodal input helpers ─────────────────────────────────────────────────
@@ -22,6 +22,12 @@ export function imagePart(url: string): ContentPart { return { type: "image_url"
 /** An audio input part; `data` is base64 audio, `format` e.g. "wav" or "mp3". */
 export function audioPart(data: string, format = "wav"): ContentPart {
   return { type: "input_audio", input_audio: { data, format } };
+}
+
+/** Normalise a Blob / Uint8Array / ArrayBuffer into a Blob for upload. */
+function toBlob(input: AudioInput, contentType = "audio/mpeg"): Blob {
+  if (input instanceof Blob) return input;
+  return new Blob([input as BlobPart], { type: contentType });
 }
 
 export class SilkLLMError extends Error {
@@ -127,6 +133,36 @@ export class SilkLLM {
     return this._request("GET", `/api/generate/audio/voices?provider=${encodeURIComponent(provider)}`) as Promise<VoicesResponse>;
   }
 
+  /**
+   * Voice conversion (speech-to-speech): convert a source audio clip into the
+   * same speech spoken by `voice` (an ElevenLabs voice_id, possibly cloned).
+   */
+  async speechToSpeech(options: SpeechToSpeechOptions): Promise<AudioResult> {
+    const form = new FormData();
+    form.append("audio", toBlob(options.audio, options.contentType), options.filename || "input.mp3");
+    form.append("voice", options.voice);
+    if (options.model) form.append("model", options.model);
+    if (options.output_format) form.append("output_format", options.output_format);
+    form.append("seconds", String(options.seconds ?? 10));
+    const vs = options.voice_settings;
+    if (vs) {
+      for (const k of ["stability", "similarity_boost", "style"] as const) {
+        if (vs[k] != null) form.append(k, String(vs[k]));
+      }
+      if (vs.use_speaker_boost != null) form.append("use_speaker_boost", String(vs.use_speaker_boost));
+    }
+    return this._requestForm("POST", "/api/generate/audio/speech-to-speech", form) as Promise<AudioResult>;
+  }
+
+  /** Create an instant voice clone from audio samples; returns the new voice_id. */
+  async cloneVoice(options: CloneVoiceOptions): Promise<CloneVoiceResult> {
+    const form = new FormData();
+    form.append("name", options.name);
+    if (options.description) form.append("description", options.description);
+    options.samples.forEach((s, i) => form.append("files", toBlob(s), `sample_${i}.mp3`));
+    return this._requestForm("POST", "/api/generate/audio/clone-voice", form) as Promise<CloneVoiceResult>;
+  }
+
   /** Generate a short video from a text prompt (where a provider supports it). */
   async generateVideo(options: VideoOptions): Promise<VideoResult> {
     return this._request("POST", "/api/generate/video", options) as Promise<VideoResult>;
@@ -188,6 +224,17 @@ export class SilkLLM {
       method,
       headers: this._headers(),
       body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!response.ok) await this._handleError(response);
+    return response.json();
+  }
+
+  /** Multipart request (file uploads). No Content-Type header: fetch sets the boundary. */
+  private async _requestForm(method: string, path: string, form: FormData): Promise<unknown> {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: { "Authorization": `Bearer ${this.apiKey}`, "User-Agent": "silkllm-js/1.0.0" },
+      body: form,
     });
     if (!response.ok) await this._handleError(response);
     return response.json();

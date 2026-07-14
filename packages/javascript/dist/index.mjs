@@ -8,6 +8,10 @@ function imagePart(url) {
 function audioPart(data, format = "wav") {
   return { type: "input_audio", input_audio: { data, format } };
 }
+function toBlob(input, contentType = "audio/mpeg") {
+  if (input instanceof Blob) return input;
+  return new Blob([input], { type: contentType });
+}
 var SilkLLMError = class extends Error {
   constructor(code, message) {
     super(message);
@@ -104,6 +108,34 @@ var SilkLLM = class {
   async listVoices(provider = "elevenlabs") {
     return this._request("GET", `/api/generate/audio/voices?provider=${encodeURIComponent(provider)}`);
   }
+  /**
+   * Voice conversion (speech-to-speech): convert a source audio clip into the
+   * same speech spoken by `voice` (an ElevenLabs voice_id, possibly cloned).
+   */
+  async speechToSpeech(options) {
+    const form = new FormData();
+    form.append("audio", toBlob(options.audio, options.contentType), options.filename || "input.mp3");
+    form.append("voice", options.voice);
+    if (options.model) form.append("model", options.model);
+    if (options.output_format) form.append("output_format", options.output_format);
+    form.append("seconds", String(options.seconds ?? 10));
+    const vs = options.voice_settings;
+    if (vs) {
+      for (const k of ["stability", "similarity_boost", "style"]) {
+        if (vs[k] != null) form.append(k, String(vs[k]));
+      }
+      if (vs.use_speaker_boost != null) form.append("use_speaker_boost", String(vs.use_speaker_boost));
+    }
+    return this._requestForm("POST", "/api/generate/audio/speech-to-speech", form);
+  }
+  /** Create an instant voice clone from audio samples; returns the new voice_id. */
+  async cloneVoice(options) {
+    const form = new FormData();
+    form.append("name", options.name);
+    if (options.description) form.append("description", options.description);
+    options.samples.forEach((s, i) => form.append("files", toBlob(s), `sample_${i}.mp3`));
+    return this._requestForm("POST", "/api/generate/audio/clone-voice", form);
+  }
   /** Generate a short video from a text prompt (where a provider supports it). */
   async generateVideo(options) {
     return this._request("POST", "/api/generate/video", options);
@@ -158,6 +190,16 @@ var SilkLLM = class {
       method,
       headers: this._headers(),
       body: body ? JSON.stringify(body) : void 0
+    });
+    if (!response.ok) await this._handleError(response);
+    return response.json();
+  }
+  /** Multipart request (file uploads). No Content-Type header: fetch sets the boundary. */
+  async _requestForm(method, path, form) {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: { "Authorization": `Bearer ${this.apiKey}`, "User-Agent": "silkllm-js/1.0.0" },
+      body: form
     });
     if (!response.ok) await this._handleError(response);
     return response.json();

@@ -311,6 +311,20 @@ For ElevenLabs voices the platform uses your account's ElevenLabs API key (added
 admin under Providers). `voice` is a voice_id from `list_voices()`; OpenAI TTS uses the
 fixed names alloy, echo, fable, onyx, nova, and shimmer.
 
+Clone a voice from your own samples, then use it for TTS or to convert a clip
+(speech-to-speech):
+
+```python
+clone = client.clone_voice(name="My voice", samples=["sample1.mp3", "sample2.mp3"])
+
+converted = client.speech_to_speech(
+    audio="recording.mp3",       # file path or bytes
+    voice=clone["voice_id"],
+    seconds=12,                  # approx source duration, for pricing
+)
+print(converted.format, len(converted.audio_b64))
+```
+
 List models with their modality so you can pick the right one:
 
 ```python

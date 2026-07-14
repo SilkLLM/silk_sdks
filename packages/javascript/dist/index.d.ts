@@ -94,6 +94,31 @@ interface VoicesResponse {
     provider: string;
     voices: Voice[];
 }
+type AudioInput = Blob | Uint8Array | ArrayBuffer;
+interface SpeechToSpeechOptions {
+    /** Source audio clip to convert. */
+    audio: AudioInput;
+    /** Target ElevenLabs voice_id (may be a cloned voice). */
+    voice: string;
+    model?: string;
+    output_format?: string;
+    /** Approximate source duration in seconds (used for pricing). */
+    seconds?: number;
+    voice_settings?: VoiceSettings;
+    filename?: string;
+    contentType?: string;
+}
+interface CloneVoiceOptions {
+    name: string;
+    /** One or more clean audio samples. */
+    samples: AudioInput[];
+    description?: string;
+}
+interface CloneVoiceResult {
+    voice_id: string | null;
+    name: string;
+    requires_verification?: boolean;
+}
 interface VideoResult {
     video_url: string | null;
     model: string;
@@ -251,6 +276,13 @@ declare class SilkLLM {
     generateAudio(options: AudioOptions): Promise<AudioResult>;
     /** List the speakers available from a voice provider (ElevenLabs). */
     listVoices(provider?: string): Promise<VoicesResponse>;
+    /**
+     * Voice conversion (speech-to-speech): convert a source audio clip into the
+     * same speech spoken by `voice` (an ElevenLabs voice_id, possibly cloned).
+     */
+    speechToSpeech(options: SpeechToSpeechOptions): Promise<AudioResult>;
+    /** Create an instant voice clone from audio samples; returns the new voice_id. */
+    cloneVoice(options: CloneVoiceOptions): Promise<CloneVoiceResult>;
     /** Generate a short video from a text prompt (where a provider supports it). */
     generateVideo(options: VideoOptions): Promise<VideoResult>;
     /**
@@ -270,7 +302,9 @@ declare class SilkLLM {
     revokeProviderKey(keyId: string): Promise<void>;
     private _headers;
     private _request;
+    /** Multipart request (file uploads). No Content-Type header: fetch sets the boundary. */
+    private _requestForm;
     private _handleError;
 }
 
-export { type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type ContentPart, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type TrialStatus, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, audioPart, SilkLLM as default, imagePart, textPart };
+export { type AudioInput, type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type CloneVoiceOptions, type CloneVoiceResult, type ContentPart, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type SpeechToSpeechOptions, type TrialStatus, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, audioPart, SilkLLM as default, imagePart, textPart };
