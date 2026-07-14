@@ -109,6 +109,33 @@ class ImageResult:
 
 
 @dataclass
+class VoiceSettings:
+    """
+    ElevenLabs voice controls. Ignored by providers that do not support them
+    (for example OpenAI TTS). All fields are optional; pass only what you want
+    to override.
+    """
+    stability: Optional[float] = None
+    similarity_boost: Optional[float] = None
+    style: Optional[float] = None
+    use_speaker_boost: Optional[bool] = None
+    speed: Optional[float] = None
+
+    def to_dict(self) -> Dict[str, object]:
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
+@dataclass
+class Voice:
+    """A speaker available from a voice provider (client.list_voices())."""
+    voice_id: str
+    name: Optional[str] = None
+    category: Optional[str] = None
+    labels: Optional[Dict[str, object]] = None
+    preview_url: Optional[str] = None
+
+
+@dataclass
 class AudioResult:
     """Response from client.generate_audio() (base64 audio)."""
     audio_b64: str
@@ -118,6 +145,7 @@ class AudioResult:
     cost_usd: float
     balance_after: float
     modality: str = "audio"
+    voice: Optional[str] = None
 
 
 @dataclass

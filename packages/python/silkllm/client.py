@@ -13,7 +13,7 @@ import httpx
 from silkllm.types import (
     GenerateResponse, ModelsResponse,
     BalanceResponse, UsageResponse, Message, ProviderKey, TrialStatus,
-    ImageResult, AudioResult, VideoResult,
+    ImageResult, AudioResult, VideoResult, VoiceSettings, Voice,
 )
 from silkllm.exceptions import (
     SilkLLMError, AuthenticationError, InsufficientBalanceError,
@@ -204,13 +204,32 @@ class Client:
 
     def generate_audio(
         self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None,
-        voice: str = "alloy",
+        voice: str = "alloy", voice_settings: Optional[VoiceSettings] = None,
+        output_format: Optional[str] = None,
     ) -> AudioResult:
-        """Generate speech audio (base64) from text."""
-        payload = {"prompt": prompt, "voice": voice}
+        """
+        Generate speech audio (base64) from text.
+
+        For OpenAI TTS, ``voice`` is a voice name (alloy, echo, fable, onyx, nova,
+        shimmer). For ElevenLabs, ``voice`` is a voice_id from ``list_voices()``
+        and ``voice_settings`` (stability, similarity_boost, style, use_speaker_boost)
+        shape the delivery. ``output_format`` (e.g. "mp3_44100_128") applies to
+        ElevenLabs.
+        """
+        payload: Dict[str, Any] = {"prompt": prompt, "voice": voice}
         if model:    payload["model"] = model
         if provider: payload["provider"] = provider
+        if voice_settings is not None:
+            payload["voice_settings"] = (
+                voice_settings.to_dict() if isinstance(voice_settings, VoiceSettings) else voice_settings
+            )
+        if output_format: payload["output_format"] = output_format
         return AudioResult(**self._request("POST", "/api/generate/audio", json=payload))
+
+    def list_voices(self, provider: str = "elevenlabs") -> List[Voice]:
+        """List the speakers available from a voice provider (ElevenLabs)."""
+        resp = self._request("GET", "/api/generate/audio/voices", params={"provider": provider})
+        return [Voice(**v) for v in resp.get("voices", [])]
 
     def generate_video(
         self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None,

@@ -11,6 +11,7 @@ import type {
   BalanceResponse, UsageResponse, ProviderKey, DepositProviderKeyOptions,
   UpdateProviderKeyOptions, TrialStatus,
   ImageResult, AudioResult, VideoResult, ImageOptions, AudioOptions, VideoOptions,
+  VoicesResponse,
 } from "./types";
 
 export class SilkLLMError extends Error {
@@ -101,9 +102,19 @@ export class SilkLLM {
     return this._request("POST", "/api/generate/image", options) as Promise<ImageResult>;
   }
 
-  /** Generate speech audio (base64) from text. */
+  /**
+   * Generate speech audio (base64) from text.
+   * For OpenAI TTS, `voice` is a name (alloy, echo, fable, onyx, nova, shimmer).
+   * For ElevenLabs, `voice` is a voice_id from `listVoices()` and `voice_settings`
+   * (stability, similarity_boost, style, use_speaker_boost) shape the delivery.
+   */
   async generateAudio(options: AudioOptions): Promise<AudioResult> {
     return this._request("POST", "/api/generate/audio", options) as Promise<AudioResult>;
+  }
+
+  /** List the speakers available from a voice provider (ElevenLabs). */
+  async listVoices(provider = "elevenlabs"): Promise<VoicesResponse> {
+    return this._request("GET", `/api/generate/audio/voices?provider=${encodeURIComponent(provider)}`) as Promise<VoicesResponse>;
   }
 
   /** Generate a short video from a text prompt (where a provider supports it). */

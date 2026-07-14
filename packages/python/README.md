@@ -289,12 +289,27 @@ img = client.generate_image(prompt="a silk ribbon over gold light", model="dall-
 print(img.count, "images", img.images)
 
 # Audio (text to speech), returned as base64
-audio = client.generate_audio(prompt="Hello from SilkLLM", model="tts-1")
+audio = client.generate_audio(prompt="Hello from SilkLLM", model="tts-1", voice="nova")
 print(len(audio.audio_b64), "bytes of", audio.format)
+
+# Expressive speech with ElevenLabs: pick a speaker and voice settings
+from silkllm import VoiceSettings
+voices = client.list_voices()  # provider="elevenlabs"
+audio = client.generate_audio(
+    prompt="One key, every model.",
+    model="eleven_multilingual_v2",
+    voice=voices[0].voice_id,
+    voice_settings=VoiceSettings(stability=0.5, similarity_boost=0.75, style=0.2, use_speaker_boost=True),
+    output_format="mp3_44100_128",
+)
 
 # Video (where a provider supports it)
 # video = client.generate_video(prompt="a flowing silk thread", seconds=5)
 ```
+
+For ElevenLabs voices the platform uses your account's ElevenLabs API key (added by an
+admin under Providers). `voice` is a voice_id from `list_voices()`; OpenAI TTS uses the
+fixed names alloy, echo, fable, onyx, nova, and shimmer.
 
 List models with their modality so you can pick the right one:
 

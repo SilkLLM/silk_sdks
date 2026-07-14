@@ -82,9 +82,18 @@ var SilkLLM = class {
   async generateImage(options) {
     return this._request("POST", "/api/generate/image", options);
   }
-  /** Generate speech audio (base64) from text. */
+  /**
+   * Generate speech audio (base64) from text.
+   * For OpenAI TTS, `voice` is a name (alloy, echo, fable, onyx, nova, shimmer).
+   * For ElevenLabs, `voice` is a voice_id from `listVoices()` and `voice_settings`
+   * (stability, similarity_boost, style, use_speaker_boost) shape the delivery.
+   */
   async generateAudio(options) {
     return this._request("POST", "/api/generate/audio", options);
+  }
+  /** List the speakers available from a voice provider (ElevenLabs). */
+  async listVoices(provider = "elevenlabs") {
+    return this._request("GET", `/api/generate/audio/voices?provider=${encodeURIComponent(provider)}`);
   }
   /** Generate a short video from a text prompt (where a provider supports it). */
   async generateVideo(options) {

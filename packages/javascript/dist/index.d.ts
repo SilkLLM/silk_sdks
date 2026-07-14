@@ -54,6 +54,29 @@ interface AudioResult {
     modality: string;
     cost_usd: number;
     balance_after: number;
+    voice?: string;
+}
+/**
+ * ElevenLabs voice controls. Ignored by providers that do not support them
+ * (for example OpenAI TTS). Pass only what you want to override.
+ */
+interface VoiceSettings {
+    stability?: number;
+    similarity_boost?: number;
+    style?: number;
+    use_speaker_boost?: boolean;
+    speed?: number;
+}
+interface Voice {
+    voice_id: string;
+    name?: string;
+    category?: string;
+    labels?: Record<string, unknown>;
+    preview_url?: string | null;
+}
+interface VoicesResponse {
+    provider: string;
+    voices: Voice[];
 }
 interface VideoResult {
     video_url: string | null;
@@ -75,6 +98,8 @@ interface AudioOptions {
     model?: string;
     provider?: string;
     voice?: string;
+    voice_settings?: VoiceSettings;
+    output_format?: string;
 }
 interface VideoOptions {
     prompt: string;
@@ -195,8 +220,15 @@ declare class SilkLLM {
     trialStatus(): Promise<TrialStatus>;
     /** Generate one or more images from a text prompt. */
     generateImage(options: ImageOptions): Promise<ImageResult>;
-    /** Generate speech audio (base64) from text. */
+    /**
+     * Generate speech audio (base64) from text.
+     * For OpenAI TTS, `voice` is a name (alloy, echo, fable, onyx, nova, shimmer).
+     * For ElevenLabs, `voice` is a voice_id from `listVoices()` and `voice_settings`
+     * (stability, similarity_boost, style, use_speaker_boost) shape the delivery.
+     */
     generateAudio(options: AudioOptions): Promise<AudioResult>;
+    /** List the speakers available from a voice provider (ElevenLabs). */
+    listVoices(provider?: string): Promise<VoicesResponse>;
     /** Generate a short video from a text prompt (where a provider supports it). */
     generateVideo(options: VideoOptions): Promise<VideoResult>;
     /**
@@ -219,4 +251,4 @@ declare class SilkLLM {
     private _handleError;
 }
 
-export { type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type TrialStatus, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, SilkLLM as default };
+export { type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type TrialStatus, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, SilkLLM as default };

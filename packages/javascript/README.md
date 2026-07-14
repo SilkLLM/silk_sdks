@@ -209,8 +209,18 @@ const img = await client.generateImage({ prompt: "a silk ribbon", model: "dall-e
 console.log(img.count, img.images);
 
 // Audio (text to speech), base64
-const audio = await client.generateAudio({ prompt: "Hello", model: "tts-1" });
+const audio = await client.generateAudio({ prompt: "Hello", model: "tts-1", voice: "nova" });
 console.log(audio.audio_b64.length, "bytes of", audio.format);
+
+// Expressive speech with ElevenLabs: pick a speaker and voice settings
+const { voices } = await client.listVoices(); // "elevenlabs"
+const speech = await client.generateAudio({
+  prompt: "One key, every model.",
+  model: "eleven_multilingual_v2",
+  voice: voices[0].voice_id,
+  voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.2, use_speaker_boost: true },
+  output_format: "mp3_44100_128",
+});
 
 // List models with modality
 for (const m of (await client.models()).models) {

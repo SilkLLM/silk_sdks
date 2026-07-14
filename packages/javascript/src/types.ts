@@ -67,6 +67,32 @@ export interface AudioResult {
   modality: string;
   cost_usd: number;
   balance_after: number;
+  voice?: string;
+}
+
+/**
+ * ElevenLabs voice controls. Ignored by providers that do not support them
+ * (for example OpenAI TTS). Pass only what you want to override.
+ */
+export interface VoiceSettings {
+  stability?: number;
+  similarity_boost?: number;
+  style?: number;
+  use_speaker_boost?: boolean;
+  speed?: number;
+}
+
+export interface Voice {
+  voice_id: string;
+  name?: string;
+  category?: string;
+  labels?: Record<string, unknown>;
+  preview_url?: string | null;
+}
+
+export interface VoicesResponse {
+  provider: string;
+  voices: Voice[];
 }
 
 export interface VideoResult {
@@ -79,7 +105,10 @@ export interface VideoResult {
 }
 
 export interface ImageOptions { prompt: string; model?: string; provider?: string; n?: number; size?: string; }
-export interface AudioOptions { prompt: string; model?: string; provider?: string; voice?: string; }
+export interface AudioOptions {
+  prompt: string; model?: string; provider?: string; voice?: string;
+  voice_settings?: VoiceSettings; output_format?: string;
+}
 export interface VideoOptions { prompt: string; model?: string; provider?: string; seconds?: number; }
 
 export interface TrialStatus {
