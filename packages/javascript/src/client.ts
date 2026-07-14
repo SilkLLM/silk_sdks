@@ -11,8 +11,18 @@ import type {
   BalanceResponse, UsageResponse, ProviderKey, DepositProviderKeyOptions,
   UpdateProviderKeyOptions, TrialStatus,
   ImageResult, AudioResult, VideoResult, ImageOptions, AudioOptions, VideoOptions,
-  VoicesResponse,
+  VoicesResponse, ContentPart,
 } from "./types";
+
+// ── Multimodal input helpers ─────────────────────────────────────────────────
+/** A text part for a multimodal message. */
+export function textPart(text: string): ContentPart { return { type: "text", text }; }
+/** An image part; `url` may be an http(s) URL or a data: URI (base64). */
+export function imagePart(url: string): ContentPart { return { type: "image_url", image_url: { url } }; }
+/** An audio input part; `data` is base64 audio, `format` e.g. "wav" or "mp3". */
+export function audioPart(data: string, format = "wav"): ContentPart {
+  return { type: "input_audio", input_audio: { data, format } };
+}
 
 export class SilkLLMError extends Error {
   constructor(public code: string, message: string) {

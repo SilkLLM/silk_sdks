@@ -68,7 +68,7 @@ class Client:
 
     def generate(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[Dict[str, Any]],
         model: Optional[str] = None,
         provider: Optional[str] = None,
         temperature: float = 0.7,

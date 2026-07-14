@@ -90,10 +90,29 @@ class UsageResponse:
 @dataclass
 class Message:
     role: str   # "user" | "assistant" | "system"
-    content: str
+    # Plain text, or a list of multimodal parts (see text_part/image_part/audio_part).
+    content: Union[str, List[Dict[str, Any]]]
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> Dict[str, Any]:
         return {"role": self.role, "content": self.content}
+
+
+# ── Multimodal input helpers ─────────────────────────────────────────────────
+# Build the typed content parts that models accept for vision and audio input.
+
+def text_part(text: str) -> Dict[str, Any]:
+    """A text part for a multimodal message."""
+    return {"type": "text", "text": text}
+
+
+def image_part(url: str) -> Dict[str, Any]:
+    """An image part. `url` may be an http(s) URL or a data: URI (base64)."""
+    return {"type": "image_url", "image_url": {"url": url}}
+
+
+def audio_part(data: str, fmt: str = "wav") -> Dict[str, Any]:
+    """An audio input part. `data` is base64 audio; `fmt` is e.g. 'wav' or 'mp3'."""
+    return {"type": "input_audio", "input_audio": {"data": data, "format": fmt}}
 
 
 @dataclass

@@ -2,9 +2,25 @@
  * types.ts + index.ts
  * TypeScript types and public exports for the SilkLLM JS SDK.
  */
+/** A multimodal content part (vision or audio input). */
+type ContentPart = {
+    type: "text";
+    text: string;
+} | {
+    type: "image_url";
+    image_url: {
+        url: string;
+    };
+} | {
+    type: "input_audio";
+    input_audio: {
+        data: string;
+        format: string;
+    };
+};
 interface Message {
     role: "user" | "assistant" | "system";
-    content: string;
+    content: string | ContentPart[];
 }
 interface GenerateOptions {
     messages: Message[];
@@ -186,6 +202,12 @@ interface UpdateProviderKeyOptions {
  * Works in Node.js (>=18) and modern browsers.
  */
 
+/** A text part for a multimodal message. */
+declare function textPart(text: string): ContentPart;
+/** An image part; `url` may be an http(s) URL or a data: URI (base64). */
+declare function imagePart(url: string): ContentPart;
+/** An audio input part; `data` is base64 audio, `format` e.g. "wav" or "mp3". */
+declare function audioPart(data: string, format?: string): ContentPart;
 declare class SilkLLMError extends Error {
     code: string;
     constructor(code: string, message: string);
@@ -251,4 +273,4 @@ declare class SilkLLM {
     private _handleError;
 }
 
-export { type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type TrialStatus, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, SilkLLM as default };
+export { type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type ContentPart, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type TrialStatus, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, audioPart, SilkLLM as default, imagePart, textPart };

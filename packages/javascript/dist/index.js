@@ -26,11 +26,23 @@ __export(index_exports, {
   RateLimitError: () => RateLimitError,
   SilkLLM: () => SilkLLM,
   SilkLLMError: () => SilkLLMError,
-  default: () => SilkLLM
+  audioPart: () => audioPart,
+  default: () => SilkLLM,
+  imagePart: () => imagePart,
+  textPart: () => textPart
 });
 module.exports = __toCommonJS(index_exports);
 
 // src/client.ts
+function textPart(text) {
+  return { type: "text", text };
+}
+function imagePart(url) {
+  return { type: "image_url", image_url: { url } };
+}
+function audioPart(data, format = "wav") {
+  return { type: "input_audio", input_audio: { data, format } };
+}
 var SilkLLMError = class extends Error {
   constructor(code, message) {
     super(message);
@@ -209,5 +221,8 @@ var SilkLLM = class {
   ProviderError,
   RateLimitError,
   SilkLLM,
-  SilkLLMError
+  SilkLLMError,
+  audioPart,
+  imagePart,
+  textPart
 });

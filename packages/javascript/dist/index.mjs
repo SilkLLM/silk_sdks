@@ -1,4 +1,13 @@
 // src/client.ts
+function textPart(text) {
+  return { type: "text", text };
+}
+function imagePart(url) {
+  return { type: "image_url", image_url: { url } };
+}
+function audioPart(data, format = "wav") {
+  return { type: "input_audio", input_audio: { data, format } };
+}
 var SilkLLMError = class extends Error {
   constructor(code, message) {
     super(message);
@@ -177,5 +186,8 @@ export {
   RateLimitError,
   SilkLLM,
   SilkLLMError,
-  SilkLLM as default
+  audioPart,
+  SilkLLM as default,
+  imagePart,
+  textPart
 };

@@ -5,9 +5,16 @@
 
 // File: silkllm-sdks/packages/javascript/src/types.ts
 
+/** A multimodal content part (vision or audio input). */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } }
+  | { type: "input_audio"; input_audio: { data: string; format: string } };
+
 export interface Message {
   role: "user" | "assistant" | "system";
-  content: string;
+  // Plain text, or a list of multimodal parts (see textPart/imagePart/audioPart).
+  content: string | ContentPart[];
 }
 
 export interface GenerateOptions {
