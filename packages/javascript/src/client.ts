@@ -8,7 +8,9 @@
 
 import type {
   GenerateOptions, GenerateResponse, ModelsResponse,
-  BalanceResponse, UsageResponse,
+  BalanceResponse, UsageResponse, ProviderKey, DepositProviderKeyOptions,
+  UpdateProviderKeyOptions, TrialStatus,
+  ImageResult, AudioResult, VideoResult, ImageOptions, AudioOptions, VideoOptions,
 } from "./types";
 
 export class SilkLLMError extends Error {
@@ -85,6 +87,71 @@ export class SilkLLM {
 
   async usage(page = 1, pageSize = 20): Promise<UsageResponse> {
     return this._request("GET", `/api/usage?page=${page}&page_size=${pageSize}`) as Promise<UsageResponse>;
+  }
+
+  /** Get your free-trial status (daily allowance, remaining today, end date). */
+  async trialStatus(): Promise<TrialStatus> {
+    return this._request("GET", "/api/trial") as Promise<TrialStatus>;
+  }
+
+  // ── Multimodal generation ──────────────────────────────────────────────────
+
+  /** Generate one or more images from a text prompt. */
+  async generateImage(options: ImageOptions): Promise<ImageResult> {
+    return this._request("POST", "/api/generate/image", options) as Promise<ImageResult>;
+  }
+
+  /** Generate speech audio (base64) from text. */
+  async generateAudio(options: AudioOptions): Promise<AudioResult> {
+    return this._request("POST", "/api/generate/audio", options) as Promise<AudioResult>;
+  }
+
+  /** Generate a short video from a text prompt (where a provider supports it). */
+  async generateVideo(options: VideoOptions): Promise<VideoResult> {
+    return this._request("POST", "/api/generate/video", options) as Promise<VideoResult>;
+  }
+
+  // ── BYOK marketplace: deposit and manage your own provider keys ────────────
+
+  /**
+   * Deposit one of your own provider API keys.
+   * A public key lets SilkLLM's algorithm serve other users with it (you earn
+   * platform credits); it is never shown to other users. A private key serves
+   * only you. Set serveOwnerWithOwnKey=false to be served as if you deposited
+   * nothing while a public key still serves the marketplace. The secret is
+   * encrypted at rest and never returned.
+   */
+  async depositProviderKey(options: DepositProviderKeyOptions): Promise<ProviderKey> {
+    const body = {
+      provider_id: options.providerId,
+      api_key: options.apiKey,
+      label: options.label ?? "My key",
+      is_public: options.isPublic ?? false,
+      is_free_key: options.isFreeKey ?? false,
+      serve_owner_with_own_key: options.serveOwnerWithOwnKey ?? true,
+      declared_budget_usd: options.declaredBudgetUsd ?? 0,
+      ...(options.dailyLimitUsd !== undefined ? { daily_limit_usd: options.dailyLimitUsd } : {}),
+    };
+    return this._request("POST", "/api/provider-keys", body) as Promise<ProviderKey>;
+  }
+
+  /** List your deposited provider keys with earnings and requests served. */
+  async listProviderKeys(): Promise<ProviderKey[]> {
+    return this._request("GET", "/api/provider-keys") as Promise<ProviderKey[]>;
+  }
+
+  /** Update a deposited key (visibility, limits, budget, serve preference, label). */
+  async updateProviderKey(keyId: string, changes: UpdateProviderKeyOptions): Promise<ProviderKey> {
+    return this._request("PATCH", `/api/provider-keys/${keyId}`, changes) as Promise<ProviderKey>;
+  }
+
+  /** Revoke a deposited key so it stops being used immediately. */
+  async revokeProviderKey(keyId: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/api/provider-keys/${keyId}`, {
+      method: "DELETE",
+      headers: this._headers(),
+    });
+    if (!response.ok) await this._handleError(response);
   }
 
   private _headers(): Record<string, string> {

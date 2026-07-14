@@ -12,16 +12,20 @@ Quick start:
 # File: silkllm-sdks/packages/python/silkllm/__init__.py
 
 from silkllm.client import Client
-from silkllm.types import GenerateResponse, ModelsResponse, BalanceResponse, UsageResponse, Message
+from silkllm.types import (
+    GenerateResponse, ModelsResponse, BalanceResponse, UsageResponse, Message, ProviderKey, TrialStatus,
+    ImageResult, AudioResult, VideoResult,
+)
 from silkllm.exceptions import (
     SilkLLMError, AuthenticationError, InsufficientBalanceError,
     ModelNotFoundError, RateLimitError, ProviderError,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __all__ = [
     "Client",
-    "GenerateResponse", "ModelsResponse", "BalanceResponse", "UsageResponse", "Message",
+    "GenerateResponse", "ModelsResponse", "BalanceResponse", "UsageResponse", "Message", "ProviderKey", "TrialStatus",
+    "ImageResult", "AudioResult", "VideoResult",
     "SilkLLMError", "AuthenticationError", "InsufficientBalanceError",
     "ModelNotFoundError", "RateLimitError", "ProviderError",
 ]

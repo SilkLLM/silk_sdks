@@ -11,7 +11,7 @@ Usage:
 
 import silkllm
 
-# Remove '/api' from base_url – the SDK adds it automatically
+# Remove '/api' from base_url - the SDK adds it automatically
 client = silkllm.Client(
     api_key="silk_19aa907700678236ce88d1e0fed3b4d04aabeb597658b0df02cafe4c3012ac54",
     base_url="https://silkllm.onrender.com"   # not /api

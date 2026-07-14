@@ -1,6 +1,6 @@
 """
 client.py
-SilkLLM Python SDK — main client class.
+SilkLLM Python SDK - main client class.
 Provides a clean interface to the SilkLLM API: generate, stream, list models, check balance.
 """
 
@@ -12,7 +12,8 @@ import httpx
 
 from silkllm.types import (
     GenerateResponse, ModelsResponse,
-    BalanceResponse, UsageResponse, Message
+    BalanceResponse, UsageResponse, Message, ProviderKey, TrialStatus,
+    ImageResult, AudioResult, VideoResult,
 )
 from silkllm.exceptions import (
     SilkLLMError, AuthenticationError, InsufficientBalanceError,
@@ -81,7 +82,7 @@ class Client:
                          Roles: "user", "assistant", "system"
             model:       Optional. Specific model ID e.g. "gpt-4o", "claude-3-5-sonnet-20241022"
             provider:    Optional. Specific provider e.g. "openai", "anthropic"
-            temperature: Sampling temperature 0.0–2.0 (default 0.7)
+            temperature: Sampling temperature 0.0-2.0 (default 0.7)
             max_tokens:  Maximum tokens to generate (default 2048)
 
         Returns:
@@ -188,6 +189,104 @@ class Client:
         """
         response = self._request("GET", "/api/usage", params={"page": page, "page_size": page_size})
         return UsageResponse(**response)
+
+    # ── Multimodal generation ─────────────────────────────────────────────────
+
+    def generate_image(
+        self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None,
+        n: int = 1, size: str = "1024x1024",
+    ) -> ImageResult:
+        """Generate one or more images from a text prompt."""
+        payload = {"prompt": prompt, "n": n, "size": size}
+        if model:    payload["model"] = model
+        if provider: payload["provider"] = provider
+        return ImageResult(**self._request("POST", "/api/generate/image", json=payload))
+
+    def generate_audio(
+        self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None,
+        voice: str = "alloy",
+    ) -> AudioResult:
+        """Generate speech audio (base64) from text."""
+        payload = {"prompt": prompt, "voice": voice}
+        if model:    payload["model"] = model
+        if provider: payload["provider"] = provider
+        return AudioResult(**self._request("POST", "/api/generate/audio", json=payload))
+
+    def generate_video(
+        self, prompt: str, model: Optional[str] = None, provider: Optional[str] = None,
+        seconds: int = 5,
+    ) -> VideoResult:
+        """Generate a short video from a text prompt (where a provider supports it)."""
+        payload = {"prompt": prompt, "seconds": seconds}
+        if model:    payload["model"] = model
+        if provider: payload["provider"] = provider
+        return VideoResult(**self._request("POST", "/api/generate/video", json=payload))
+
+    def trial_status(self) -> TrialStatus:
+        """
+        Get your free-trial status: daily allowance, how much is left today, and
+        when the trial ends. Trials cover usage for users without balance during
+        the onboarding window, and work through the API too.
+        """
+        response = self._request("GET", "/api/trial")
+        return TrialStatus(**response)
+
+    # ── BYOK marketplace: deposit and manage your own provider keys ───────────
+
+    def deposit_provider_key(
+        self,
+        provider_id: str,
+        api_key: str,
+        label: str = "My key",
+        is_public: bool = False,
+        is_free_key: bool = False,
+        serve_owner_with_own_key: bool = True,
+        daily_limit_usd: Optional[float] = None,
+        declared_budget_usd: float = 0.0,
+    ) -> ProviderKey:
+        """
+        Deposit one of your own provider API keys.
+
+        - is_public=True lets SilkLLM's algorithm serve other users with it, and
+          you earn platform credits when they do. A public key is never shown to
+          other users; only the algorithm and admins ever see it.
+        - is_public=False (private) means only you are ever routed through it.
+        - serve_owner_with_own_key=False routes your own requests as if you had
+          not deposited a key, while a public key still serves the marketplace.
+
+        The secret is encrypted at rest and never returned.
+        """
+        payload = {
+            "provider_id": provider_id,
+            "api_key": api_key,
+            "label": label,
+            "is_public": is_public,
+            "is_free_key": is_free_key,
+            "serve_owner_with_own_key": serve_owner_with_own_key,
+            "declared_budget_usd": declared_budget_usd,
+        }
+        if daily_limit_usd is not None:
+            payload["daily_limit_usd"] = daily_limit_usd
+        response = self._request("POST", "/api/provider-keys", json=payload)
+        return ProviderKey(**response)
+
+    def list_provider_keys(self) -> List[ProviderKey]:
+        """List your deposited provider keys with earnings and requests served."""
+        response = self._request("GET", "/api/provider-keys")
+        return [ProviderKey(**k) for k in response]
+
+    def update_provider_key(self, key_id: str, **fields) -> ProviderKey:
+        """
+        Update a deposited key. Accepts any of: label, is_public, is_free_key,
+        serve_owner_with_own_key, daily_limit_usd, declared_budget_usd.
+        """
+        response = self._request("PATCH", f"/api/provider-keys/{key_id}", json=fields)
+        return ProviderKey(**response)
+
+    def revoke_provider_key(self, key_id: str) -> None:
+        """Revoke a deposited key so it stops being used immediately."""
+        resp = self._client.request("DELETE", f"/api/provider-keys/{key_id}")
+        self._check_response(resp)
 
     def _request(self, method: str, path: str, **kwargs) -> dict:
         """Make an HTTP request and handle errors uniformly."""

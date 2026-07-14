@@ -1,6 +1,6 @@
 /**
  * streaming.js
- * Node.js streaming example — prints each chunk as it arrives.
+ * Node.js streaming example - prints each chunk as it arrives.
  *
  * Usage:
  *   SILKLLM_API_KEY=silk_your_key SILKLLM_BASE_URL=http://localhost:8000 node streaming.js

@@ -45,6 +45,52 @@ export interface ModelInfo {
   output_cost_per_1k_usd: number;
   context_window: number;
   capabilities: string[];
+  modality?: string;   // text | image | audio | video
+  is_free?: boolean;
+}
+
+export interface ImageResult {
+  images: (string | null)[];
+  count: number;
+  model: string;
+  provider: string;
+  modality: string;
+  cost_usd: number;
+  balance_after: number;
+}
+
+export interface AudioResult {
+  audio_b64: string;
+  format: string;
+  model: string;
+  provider: string;
+  modality: string;
+  cost_usd: number;
+  balance_after: number;
+}
+
+export interface VideoResult {
+  video_url: string | null;
+  model: string;
+  provider: string;
+  modality: string;
+  cost_usd: number;
+  balance_after: number;
+}
+
+export interface ImageOptions { prompt: string; model?: string; provider?: string; n?: number; size?: string; }
+export interface AudioOptions { prompt: string; model?: string; provider?: string; voice?: string; }
+export interface VideoOptions { prompt: string; model?: string; provider?: string; seconds?: number; }
+
+export interface TrialStatus {
+  active: boolean;
+  tier: string;
+  daily_limit_usd: number;
+  daily_used_usd: number;
+  daily_remaining_usd: number;
+  expires_at?: string | null;
+  days_remaining: number;
+  lifetime_used_usd: number;
 }
 
 export interface ModelsResponse {
@@ -74,6 +120,48 @@ export interface UsageResponse {
   total: number;
   page: number;
   page_size: number;
+}
+
+// ── BYOK marketplace ─────────────────────────────────────────────────────────
+
+export interface ProviderKey {
+  id: string;
+  provider_id: string;
+  label: string;
+  is_public: boolean;
+  is_free_key: boolean;
+  serve_owner_with_own_key: boolean;
+  daily_limit_usd: number;
+  declared_budget_usd: number;
+  consumed_usd_total: number;
+  status: string;
+  success_count: number;
+  failure_count: number;
+  created_at: string;
+  last_used?: string | null;
+  earned_credits_total: number;
+  requests_served: number;
+  provider_cost_served: number;
+}
+
+export interface DepositProviderKeyOptions {
+  providerId: string;
+  apiKey: string;
+  label?: string;
+  isPublic?: boolean;
+  isFreeKey?: boolean;
+  serveOwnerWithOwnKey?: boolean;
+  dailyLimitUsd?: number;
+  declaredBudgetUsd?: number;
+}
+
+export interface UpdateProviderKeyOptions {
+  label?: string;
+  is_public?: boolean;
+  is_free_key?: boolean;
+  serve_owner_with_own_key?: boolean;
+  daily_limit_usd?: number;
+  declared_budget_usd?: number;
 }
 
 // EOF silkllm-sdks/packages/javascript/src/types.ts

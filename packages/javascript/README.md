@@ -1,6 +1,6 @@
 # SilkLLM JavaScript SDK
 
-The official JavaScript/TypeScript SDK for SilkLLM — one API key for OpenAI, Anthropic, Google, DeepSeek, and xAI.
+The official JavaScript/TypeScript SDK for SilkLLM - one API key for OpenAI, Anthropic, Google, DeepSeek, and xAI.
 
 ## Installation
 
@@ -114,7 +114,7 @@ try {
   if (err instanceof InsufficientBalanceError) {
     console.log("Add credits at silkllm.com/dashboard/billing");
   } else if (err instanceof RateLimitError) {
-    console.log("Slow down — rate limit hit");
+    console.log("Slow down - rate limit hit");
   } else if (err instanceof ProviderError) {
     console.log("All providers failed:", err.message);
   } else if (err instanceof SilkLLMError) {
@@ -132,7 +132,7 @@ const response = await client.generate({
   messages: [...],        // Required. Array of {role, content}
   model: "gpt-4o",        // Optional. Model ID
   provider: "openai",     // Optional. Provider name
-  temperature: 0.7,       // Optional. 0.0–2.0
+  temperature: 0.7,       // Optional. 0.0-2.0
   max_tokens: 2048,       // Optional. Max output tokens
 });
 ```
@@ -151,4 +151,69 @@ models.forEach(m => console.log(m.id, m.input_cost_per_1k_usd));
 
 // Usage history
 const { entries, total } = await client.usage(1, 20);
+```
+
+---
+
+## BYOK Marketplace: bring your own key
+
+Deposit your own provider key. A public key lets SilkLLM serve other users with
+it and you earn platform credits when they do (spendable on any model at the
+standard markup). A private key serves only you. A public key is never shown to
+other users; only the routing algorithm and admins ever see it. The secret is
+encrypted at rest and never returned.
+
+```javascript
+import SilkLLM from "silkllm";
+const client = new SilkLLM({ apiKey: "silk_..." });
+
+// Deposit a public key (you earn credits when others use it)
+const key = await client.depositProviderKey({
+  providerId: "openai",
+  apiKey: "sk-your-openai-key",
+  label: "my openai",
+  isPublic: true,
+  declaredBudgetUsd: 50,        // we never spend past this
+});
+
+// List your keys with earnings and requests served
+for (const k of await client.listProviderKeys()) {
+  console.log(k.label, k.is_public, "earned:", k.earned_credits_total, "served:", k.requests_served);
+}
+
+// Update: make it private, or opt out of using your own key for your own traffic
+await client.updateProviderKey(key.id, { is_public: false, serve_owner_with_own_key: false });
+
+// Revoke (stops being used immediately)
+await client.revokeProviderKey(key.id);
+```
+
+Charging rules: using your own private key costs the owner markup (25%); using
+your own public key or anyone else's key or a platform key costs the standard
+10%. Free models cost nothing and earn nothing.
+
+---
+
+## Free trial and multimodal
+
+```javascript
+import SilkLLM from "silkllm";
+const client = new SilkLLM({ apiKey: "silk_..." });
+
+// Free-trial status
+const t = await client.trialStatus();
+console.log(t.active, t.daily_remaining_usd, "of", t.daily_limit_usd, "left today");
+
+// Image generation
+const img = await client.generateImage({ prompt: "a silk ribbon", model: "dall-e-3", n: 2 });
+console.log(img.count, img.images);
+
+// Audio (text to speech), base64
+const audio = await client.generateAudio({ prompt: "Hello", model: "tts-1" });
+console.log(audio.audio_b64.length, "bytes of", audio.format);
+
+// List models with modality
+for (const m of (await client.models()).models) {
+  console.log(m.id, m.modality, m.is_free ? "free" : "paid");
+}
 ```

@@ -1,6 +1,6 @@
 """
 streaming.py
-Streaming example — prints tokens as they arrive from the provider.
+Streaming example - prints tokens as they arrive from the provider.
 
 Usage:
     export SILKLLM_API_KEY=silk_your_key_here

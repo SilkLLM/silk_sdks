@@ -34,6 +34,63 @@ interface ModelInfo {
     output_cost_per_1k_usd: number;
     context_window: number;
     capabilities: string[];
+    modality?: string;
+    is_free?: boolean;
+}
+interface ImageResult {
+    images: (string | null)[];
+    count: number;
+    model: string;
+    provider: string;
+    modality: string;
+    cost_usd: number;
+    balance_after: number;
+}
+interface AudioResult {
+    audio_b64: string;
+    format: string;
+    model: string;
+    provider: string;
+    modality: string;
+    cost_usd: number;
+    balance_after: number;
+}
+interface VideoResult {
+    video_url: string | null;
+    model: string;
+    provider: string;
+    modality: string;
+    cost_usd: number;
+    balance_after: number;
+}
+interface ImageOptions {
+    prompt: string;
+    model?: string;
+    provider?: string;
+    n?: number;
+    size?: string;
+}
+interface AudioOptions {
+    prompt: string;
+    model?: string;
+    provider?: string;
+    voice?: string;
+}
+interface VideoOptions {
+    prompt: string;
+    model?: string;
+    provider?: string;
+    seconds?: number;
+}
+interface TrialStatus {
+    active: boolean;
+    tier: string;
+    daily_limit_usd: number;
+    daily_used_usd: number;
+    daily_remaining_usd: number;
+    expires_at?: string | null;
+    days_remaining: number;
+    lifetime_used_usd: number;
 }
 interface ModelsResponse {
     models: ModelInfo[];
@@ -59,6 +116,43 @@ interface UsageResponse {
     total: number;
     page: number;
     page_size: number;
+}
+interface ProviderKey {
+    id: string;
+    provider_id: string;
+    label: string;
+    is_public: boolean;
+    is_free_key: boolean;
+    serve_owner_with_own_key: boolean;
+    daily_limit_usd: number;
+    declared_budget_usd: number;
+    consumed_usd_total: number;
+    status: string;
+    success_count: number;
+    failure_count: number;
+    created_at: string;
+    last_used?: string | null;
+    earned_credits_total: number;
+    requests_served: number;
+    provider_cost_served: number;
+}
+interface DepositProviderKeyOptions {
+    providerId: string;
+    apiKey: string;
+    label?: string;
+    isPublic?: boolean;
+    isFreeKey?: boolean;
+    serveOwnerWithOwnKey?: boolean;
+    dailyLimitUsd?: number;
+    declaredBudgetUsd?: number;
+}
+interface UpdateProviderKeyOptions {
+    label?: string;
+    is_public?: boolean;
+    is_free_key?: boolean;
+    serve_owner_with_own_key?: boolean;
+    daily_limit_usd?: number;
+    declared_budget_usd?: number;
 }
 
 /**
@@ -97,9 +191,32 @@ declare class SilkLLM {
     models(provider?: string): Promise<ModelsResponse>;
     balance(): Promise<BalanceResponse>;
     usage(page?: number, pageSize?: number): Promise<UsageResponse>;
+    /** Get your free-trial status (daily allowance, remaining today, end date). */
+    trialStatus(): Promise<TrialStatus>;
+    /** Generate one or more images from a text prompt. */
+    generateImage(options: ImageOptions): Promise<ImageResult>;
+    /** Generate speech audio (base64) from text. */
+    generateAudio(options: AudioOptions): Promise<AudioResult>;
+    /** Generate a short video from a text prompt (where a provider supports it). */
+    generateVideo(options: VideoOptions): Promise<VideoResult>;
+    /**
+     * Deposit one of your own provider API keys.
+     * A public key lets SilkLLM's algorithm serve other users with it (you earn
+     * platform credits); it is never shown to other users. A private key serves
+     * only you. Set serveOwnerWithOwnKey=false to be served as if you deposited
+     * nothing while a public key still serves the marketplace. The secret is
+     * encrypted at rest and never returned.
+     */
+    depositProviderKey(options: DepositProviderKeyOptions): Promise<ProviderKey>;
+    /** List your deposited provider keys with earnings and requests served. */
+    listProviderKeys(): Promise<ProviderKey[]>;
+    /** Update a deposited key (visibility, limits, budget, serve preference, label). */
+    updateProviderKey(keyId: string, changes: UpdateProviderKeyOptions): Promise<ProviderKey>;
+    /** Revoke a deposited key so it stops being used immediately. */
+    revokeProviderKey(keyId: string): Promise<void>;
     private _headers;
     private _request;
     private _handleError;
 }
 
-export { AuthenticationError, type BalanceResponse, type GenerateOptions, type GenerateResponse, InsufficientBalanceError, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, RateLimitError, SilkLLM, SilkLLMError, type UsageResponse, SilkLLM as default };
+export { type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type TrialStatus, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, SilkLLM as default };

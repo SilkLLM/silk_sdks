@@ -41,6 +41,8 @@ class ModelInfo:
     context_window: int
     capabilities: List[str]
     fallback_models: List[str]
+    modality: str = "text"          # text | image | audio | video
+    is_free: bool = False           # free to call (served at $0)
 
 
 @dataclass
@@ -92,5 +94,75 @@ class Message:
 
     def to_dict(self) -> Dict[str, str]:
         return {"role": self.role, "content": self.content}
+
+
+@dataclass
+class ImageResult:
+    """Response from client.generate_image()."""
+    images: List[Optional[str]]
+    count: int
+    model: str
+    provider: str
+    cost_usd: float
+    balance_after: float
+    modality: str = "image"
+
+
+@dataclass
+class AudioResult:
+    """Response from client.generate_audio() (base64 audio)."""
+    audio_b64: str
+    format: str
+    model: str
+    provider: str
+    cost_usd: float
+    balance_after: float
+    modality: str = "audio"
+
+
+@dataclass
+class VideoResult:
+    """Response from client.generate_video()."""
+    video_url: Optional[str]
+    model: str
+    provider: str
+    cost_usd: float
+    balance_after: float
+    modality: str = "video"
+
+
+@dataclass
+class TrialStatus:
+    """Response from client.trial_status()."""
+    active: bool
+    tier: str
+    daily_limit_usd: float
+    daily_used_usd: float
+    daily_remaining_usd: float
+    days_remaining: int
+    lifetime_used_usd: float
+    expires_at: Optional[str] = None
+
+
+@dataclass
+class ProviderKey:
+    """A deposited provider key (BYOK marketplace). The secret is never returned."""
+    id: str
+    provider_id: str
+    label: str
+    is_public: bool
+    is_free_key: bool
+    serve_owner_with_own_key: bool
+    daily_limit_usd: float
+    declared_budget_usd: float
+    consumed_usd_total: float
+    status: str
+    success_count: int
+    failure_count: int
+    created_at: str
+    last_used: Optional[str] = None
+    earned_credits_total: float = 0.0
+    requests_served: int = 0
+    provider_cost_served: float = 0.0
 
 # EOF silkllm-sdks/packages/python/silkllm/types.py

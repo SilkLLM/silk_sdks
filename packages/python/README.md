@@ -1,6 +1,6 @@
 # SilkLLM Python SDK
 
-The official Python SDK for [SilkLLM](https://getsilkllm.com) — one API key for OpenAI, Anthropic, Google, DeepSeek, and xAI.
+The official Python SDK for [SilkLLM](https://getsilkllm.com) - one API key for OpenAI, Anthropic, Google, DeepSeek, and xAI.
 
 ## Installation
 
@@ -67,7 +67,7 @@ response = client.generate(
     provider="anthropic",
 )
 
-# No preference — routes to cheapest healthy model automatically
+# No preference - routes to cheapest healthy model automatically
 response = client.generate(
     messages=[{"role": "user", "content": "Hi!"}],
 )
@@ -167,13 +167,13 @@ try:
     print(response.content)
 
 except silkllm.InsufficientBalanceError:
-    print("Out of credits — visit dashboard to add more.")
+    print("Out of credits - visit dashboard to add more.")
 
 except silkllm.ModelNotFoundError as e:
     print(f"Model not available: {e}")
 
 except silkllm.RateLimitError:
-    print("Rate limited — slow down requests.")
+    print("Rate limited - slow down requests.")
 
 except silkllm.ProviderError as e:
     print(f"All providers failed: {e}")
@@ -205,7 +205,7 @@ response = client.generate(
     messages=[...],           # Required. List of {role, content} dicts.
     model="gpt-4o",           # Optional. Specific model ID.
     provider="openai",        # Optional. Specific provider.
-    temperature=0.7,          # Optional. 0.0–2.0 (default 0.7).
+    temperature=0.7,          # Optional. 0.0-2.0 (default 0.7).
     max_tokens=2048,          # Optional. Max output tokens (default 2048).
 )
 ```
@@ -232,3 +232,73 @@ response = client.generate(
 | `usage.total_tokens` | int | Total tokens |
 | `cost_usd` | float | Cost in USD (provider cost + 10% markup) |
 | `balance_after` | float | Your remaining balance after this request |
+
+---
+
+## BYOK Marketplace: bring your own key
+
+Deposit your own provider key. A public key lets SilkLLM serve other users with
+it and you earn platform credits when they do (spendable on any model at the
+standard markup). A private key serves only you. A public key is never shown to
+other users; only the routing algorithm and admins ever see it. The secret is
+encrypted at rest and never returned.
+
+```python
+import silkllm
+client = silkllm.Client(api_key="silk_...")
+
+# Deposit a public key (you earn credits when others use it)
+key = client.deposit_provider_key(
+    provider_id="openai",
+    api_key="sk-your-openai-key",
+    label="my openai",
+    is_public=True,
+    declared_budget_usd=50,        # we never spend past this
+)
+print(key.id, key.status)
+
+# List your keys with earnings and requests served
+for k in client.list_provider_keys():
+    print(k.label, k.is_public, "earned:", k.earned_credits_total, "served:", k.requests_served)
+
+# Update: make it private, or opt out of using your own key for your own traffic
+client.update_provider_key(key.id, is_public=False, serve_owner_with_own_key=False)
+
+# Revoke (stops being used immediately)
+client.revoke_provider_key(key.id)
+```
+
+Charging rules: using your own private key costs the owner markup (25%); using
+your own public key or anyone else's key or a platform key costs the standard
+10%. Free models cost nothing and earn nothing.
+
+---
+
+## Free trial and multimodal
+
+```python
+import silkllm
+client = silkllm.Client(api_key="silk_...")
+
+# Free-trial status (works even with a zero balance during the trial window)
+t = client.trial_status()
+print(t.active, t.daily_remaining_usd, "of", t.daily_limit_usd, "left today")
+
+# Image generation
+img = client.generate_image(prompt="a silk ribbon over gold light", model="dall-e-3", n=2)
+print(img.count, "images", img.images)
+
+# Audio (text to speech), returned as base64
+audio = client.generate_audio(prompt="Hello from SilkLLM", model="tts-1")
+print(len(audio.audio_b64), "bytes of", audio.format)
+
+# Video (where a provider supports it)
+# video = client.generate_video(prompt="a flowing silk thread", seconds=5)
+```
+
+List models with their modality so you can pick the right one:
+
+```python
+for m in client.models().models:
+    print(m.id, m.modality, "free" if m.is_free else "paid")
+```
