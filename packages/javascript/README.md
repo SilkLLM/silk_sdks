@@ -95,6 +95,100 @@ await client.generate({ messages: [...] });
 
 ---
 
+---
+
+## API Key Spend Limits
+
+Every key can carry a limit on how much of your balance it may spend. Once a key
+reaches its limit it stops working; every other key on the account carries on.
+This is how you hand a key to a side project, a contractor or a CI pipeline
+without putting the whole balance at risk.
+
+A limit is a ceiling on the shared balance, not a separate wallet. Three keys
+limited to $10 do not reserve $30 between them, they each simply stop at $10.
+A key with no limit can use the whole balance.
+
+```js
+// Create a capped key. The secret is on .key and is never shown again.
+const key = await client.createKey({ name: "Side project", spendLimitUsd: 5.0 });
+console.log(key.key);
+
+// Where every key stands
+for (const k of await client.listKeys()) {
+  console.log(k.name, k.spent_usd, "of", k.spend_limit_usd ?? "uncapped",
+              k.is_exhausted ? "AT LIMIT" : "");
+}
+
+// Raise a limit (the key resumes at once; its spend so far still counts)
+await client.updateKey(key.id, { spendLimitUsd: 20.0 });
+
+// Remove the limit entirely. This needs its own flag, because omitting
+// spendLimitUsd means "leave it as it is".
+await client.updateKey(key.id, { clearSpendLimit: true });
+
+// Start the budget again: clears the counter, refunds nothing, keeps history
+await client.resetKeyUsage(key.id);
+
+await client.revokeKey(key.id);
+```
+
+### Handling the limit in your code
+
+A spent key answers HTTP 402 with the code `key_limit_exceeded`. That is
+distinct from an empty account balance, so you can tell "this key is done" from
+"this account is out of money" and react differently.
+
+```js
+import { InsufficientBalanceError } from "silkllm";
+
+try {
+  await client.generate({ messages: [{ role: "user", content: "Hello" }] });
+} catch (err) {
+  if (err instanceof InsufficientBalanceError && err.code === "key_limit_exceeded") {
+    // raise the key's limit, or use a different key
+  } else if (err instanceof InsufficientBalanceError) {
+    // the account itself needs topping up
+  }
+}
+```
+
+Requests are refused before any provider is contacted, so a key at its limit
+costs nothing when it is blocked. The pre-flight check uses an estimate, so the
+request that crosses the line can finish very slightly over, exactly as the
+account balance can.
+
+---
+
+## Per-Key Audit History
+
+Every key keeps its own record: what it called, which model served it, tokens,
+cost and latency. Refused attempts are recorded too, which is what makes this
+useful when a deployment stops working.
+
+```js
+const history = await client.keyUsage(key.id, { pageSize: 25 });
+console.log(history.total_requests, "requests,", history.total_cost_usd, "spent");
+
+for (const e of history.entries) {
+  console.log(e.created_at, e.status, e.served_model, e.cost_usd);
+}
+
+// Only the refusals: this is what a key hitting its limit looks like
+const blocked = await client.keyUsage(key.id, { status: "limit_exceeded" });
+console.log("blocked", blocked.total, "times");
+```
+
+| `status` | Meaning |
+|---|---|
+| `ok` | Served and charged |
+| `limit_exceeded` | Refused: the key reached its spend limit |
+| `insufficient_balance` | Refused: the account has no credit |
+| `provider_error` | The provider failed after the key was accepted |
+
+Totals cover the key's whole history and survive a counter reset; the `status`
+filter narrows the page only, so filtering never changes what the key appears to
+have spent.
+
 ## Error Handling
 
 ```javascript

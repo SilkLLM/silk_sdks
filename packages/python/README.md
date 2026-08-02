@@ -152,6 +152,96 @@ for entry in usage.entries:
 
 ---
 
+---
+
+## API Key Spend Limits
+
+Every key can carry a limit on how much of your balance it may spend. Once a key
+reaches its limit it stops working; every other key on the account carries on.
+This is how you hand a key to a side project, a contractor or a CI pipeline
+without putting the whole balance at risk.
+
+A limit is a ceiling on the shared balance, not a separate wallet. Three keys
+limited to $10 do not reserve $30 between them, they each simply stop at $10.
+A key with no limit can use the whole balance.
+
+```python
+# Create a capped key. The secret is on .key and is never shown again.
+key = client.create_key("Side project", spend_limit_usd=5.00)
+print(key.key)
+
+# Where every key stands
+for k in client.list_keys():
+    print(k.name, k.spent_usd, "of", k.spend_limit_usd or "uncapped",
+          "AT LIMIT" if k.is_exhausted else "")
+
+# Raise a limit (the key resumes at once; its spend so far still counts)
+client.update_key(key.id, spend_limit_usd=20.00)
+
+# Remove the limit entirely. This needs its own flag, because passing
+# spend_limit_usd=None means "leave it as it is".
+client.update_key(key.id, clear_spend_limit=True)
+
+# Start the budget again: clears the counter, refunds nothing, keeps history
+client.reset_key_usage(key.id)
+
+client.revoke_key(key.id)
+```
+
+### Handling the limit in your code
+
+A spent key answers HTTP 402 with the code `key_limit_exceeded`. That is
+distinct from an empty account balance, so you can tell "this key is done" from
+"this account is out of money" and react differently.
+
+```python
+from silkllm import InsufficientBalanceError
+
+try:
+    client.generate(messages=[{"role": "user", "content": "Hello"}])
+except InsufficientBalanceError as e:
+    if getattr(e, "code", "") == "key_limit_exceeded":
+        ...   # raise the key's limit, or use a different key
+    else:
+        ...   # the account itself needs topping up
+```
+
+Requests are refused before any provider is contacted, so a key at its limit
+costs nothing when it is blocked. The pre-flight check uses an estimate, so the
+request that crosses the line can finish very slightly over, exactly as the
+account balance can.
+
+---
+
+## Per-Key Audit History
+
+Every key keeps its own record: what it called, which model served it, tokens,
+cost and latency. Refused attempts are recorded too, which is what makes this
+useful when a deployment stops working.
+
+```python
+history = client.key_usage(key.id, page_size=25)
+print(history.total_requests, "requests,", history.total_cost_usd, "spent")
+
+for e in history.entries:
+    print(e.created_at, e.status, e.served_model, e.cost_usd)
+
+# Only the refusals: this is what a key hitting its limit looks like
+blocked = client.key_usage(key.id, status="limit_exceeded")
+print("blocked", blocked.total, "times")
+```
+
+| `status` | Meaning |
+|---|---|
+| `ok` | Served and charged |
+| `limit_exceeded` | Refused: the key reached its spend limit |
+| `insufficient_balance` | Refused: the account has no credit |
+| `provider_error` | The provider failed after the key was accepted |
+
+Totals cover the key's whole history and survive a counter reset; the `status`
+filter narrows the page only, so filtering never changes what the key appears to
+have spent.
+
 ## Error Handling
 
 ```python
