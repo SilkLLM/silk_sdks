@@ -495,6 +495,38 @@ class Client:
         """
         return self._request("GET", "/api/keys/allocation")
 
+    # ── Promotions ─────────────────────────────────────────────────────────
+    # A promotion discounts SilkLLM's own fee, the margin added on top of what
+    # a request costs to serve. It never touches your credit balance and never
+    # touches the provider's cost, so a discounted request is cheaper but no
+    # credit appears from nowhere.
+
+    def redeem_promo(self, code: str) -> Dict[str, Any]:
+        """
+        Redeem a promo code on this account.
+
+        One redemption per account. The response describes what was granted,
+        including a plain-English `summary`, so an application can show the
+        customer what they just got without working it out.
+
+            promo = client.redeem_promo("LAUNCH-ABC123")
+            print(promo["summary"])
+        """
+        return self._request("POST", "/api/promotions/redeem", json={"code": code})
+
+    def promotions(self) -> List[Dict[str, Any]]:
+        """Every promotion on this account, live and expired, newest first."""
+        return self._request("GET", "/api/promotions")
+
+    def active_promotion(self) -> Optional[Dict[str, Any]]:
+        """
+        The discount currently being applied, or None.
+
+        Discounts do not stack. Holding more than one means the most generous
+        applies, and this is the one that will come off the next request.
+        """
+        return self._request("GET", "/api/promotions/active")
+
     def export_key_usage(self, key_id: str, format: str = "csv") -> bytes:
         """
         Download a key's full request history for auditing.

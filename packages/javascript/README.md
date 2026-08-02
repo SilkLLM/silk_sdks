@@ -166,6 +166,31 @@ account balance can.
 
 ---
 
+## Promotions and promo codes
+
+A promotion discounts **SilkLLM's own fee**, the margin added on top of what a
+request costs to serve. It never touches your credit balance and it never
+touches the provider's cost, so a discounted request is cheaper but no credit
+appears from nowhere. At 100% off you pay exactly what the request cost us.
+
+```js
+const promo = await client.redeemPromo("LAUNCH-ABC123");
+console.log(promo.summary);
+// "All SilkLLM fees waived until 01 Sep 2026. Your credit balance and the
+//  provider's cost are unchanged; only our margin is discounted."
+
+await client.activePromotion();  // the one currently applying, or null
+await client.promotions();       // everything ever claimed, live and expired
+```
+
+A code can be redeemed once per account. Discounts do not stack: if you hold
+more than one, the most generous applies. Some codes are reserved for named
+accounts, some run out after a set number of redemptions, and some expire on a
+date or a set number of days after you claim them, whichever comes first. The
+`summary` on the response spells out which of those you got.
+
+---
+
 ## Key controls
 
 A spend limit answers "how much". These answer the rest: what a key may call,

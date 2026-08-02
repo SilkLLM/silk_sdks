@@ -355,3 +355,26 @@ export interface Webhook {
 }
 
 // EOF silkllm-sdks/packages/javascript/src/types.ts
+
+/**
+ * A promotion claimed on your account.
+ *
+ * `discount_percent` is a percentage of the **SilkLLM fee**, never of the
+ * provider's cost and never of your credit balance.
+ */
+export interface PromotionRedemption {
+  id: string;
+  promotion_name: string;
+  description: string | null;
+  discount_percent: number;
+  redeemed_at: string;
+  /** null means it runs indefinitely. */
+  expires_at: string | null;
+  is_active: boolean;
+  uses_count: number;
+  fee_saved_usd: number;
+  applies_to_models: string[] | null;
+  applies_to_providers: string[] | null;
+  /** Plain-English description of what this gives you. Safe to show a customer. */
+  summary: string;
+}

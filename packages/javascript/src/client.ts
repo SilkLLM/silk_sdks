@@ -13,7 +13,7 @@ import type {
   ImageResult, AudioResult, VideoResult, ImageOptions, AudioOptions, VideoOptions,
   VoicesResponse, ContentPart, SpeechToSpeechOptions, CloneVoiceOptions, CloneVoiceResult, AudioInput,
   ApiKey, KeyUsage, CreateKeyOptions, UpdateKeyOptions, KeyControls,
-  BudgetPool, Webhook,
+  BudgetPool, Webhook, PromotionRedemption,
 } from "./types";
 import { resolveBaseUrl } from "./endpoint";
 
@@ -338,6 +338,36 @@ export class SilkLLM {
    */
   async allocation(): Promise<{ balance: number; allocated: number; available: number }> {
     return this._request("GET", "/api/keys/allocation") as Promise<any>;
+  }
+
+  // ── Promotions ──────────────────────────────────────────────────────────
+  // A promotion discounts SilkLLM's own fee, the margin added on top of what a
+  // request costs to serve. It never touches your credit balance and never
+  // touches the provider's cost.
+
+  /**
+   * Redeem a promo code on this account.
+   *
+   * One redemption per account. The result describes what was granted,
+   * including a plain-English `summary` to show the customer.
+   */
+  async redeemPromo(code: string): Promise<PromotionRedemption> {
+    return this._request("POST", "/api/promotions/redeem", { code }) as Promise<PromotionRedemption>;
+  }
+
+  /** Every promotion on this account, live and expired, newest first. */
+  async promotions(): Promise<PromotionRedemption[]> {
+    return this._request("GET", "/api/promotions") as Promise<PromotionRedemption[]>;
+  }
+
+  /**
+   * The discount currently being applied, or null.
+   *
+   * Discounts do not stack: holding more than one means the most generous
+   * applies, and this is the one that will come off the next request.
+   */
+  async activePromotion(): Promise<PromotionRedemption | null> {
+    return this._request("GET", "/api/promotions/active") as Promise<PromotionRedemption | null>;
   }
 
   /**

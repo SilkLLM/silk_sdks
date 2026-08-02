@@ -326,6 +326,32 @@ var SilkLLM = class {
   async allocation() {
     return this._request("GET", "/api/keys/allocation");
   }
+  // ── Promotions ──────────────────────────────────────────────────────────
+  // A promotion discounts SilkLLM's own fee, the margin added on top of what a
+  // request costs to serve. It never touches your credit balance and never
+  // touches the provider's cost.
+  /**
+   * Redeem a promo code on this account.
+   *
+   * One redemption per account. The result describes what was granted,
+   * including a plain-English `summary` to show the customer.
+   */
+  async redeemPromo(code) {
+    return this._request("POST", "/api/promotions/redeem", { code });
+  }
+  /** Every promotion on this account, live and expired, newest first. */
+  async promotions() {
+    return this._request("GET", "/api/promotions");
+  }
+  /**
+   * The discount currently being applied, or null.
+   *
+   * Discounts do not stack: holding more than one means the most generous
+   * applies, and this is the one that will come off the next request.
+   */
+  async activePromotion() {
+    return this._request("GET", "/api/promotions/active");
+  }
   /**
    * Download a key's full request history for auditing.
    *

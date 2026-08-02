@@ -337,6 +337,28 @@ interface Webhook {
     last_delivery_at: string | null;
     consecutive_failures: number;
 }
+/**
+ * A promotion claimed on your account.
+ *
+ * `discount_percent` is a percentage of the **SilkLLM fee**, never of the
+ * provider's cost and never of your credit balance.
+ */
+interface PromotionRedemption {
+    id: string;
+    promotion_name: string;
+    description: string | null;
+    discount_percent: number;
+    redeemed_at: string;
+    /** null means it runs indefinitely. */
+    expires_at: string | null;
+    is_active: boolean;
+    uses_count: number;
+    fee_saved_usd: number;
+    applies_to_models: string[] | null;
+    applies_to_providers: string[] | null;
+    /** Plain-English description of what this gives you. Safe to show a customer. */
+    summary: string;
+}
 
 /**
  * client.ts
@@ -507,6 +529,22 @@ declare class SilkLLM {
         available: number;
     }>;
     /**
+     * Redeem a promo code on this account.
+     *
+     * One redemption per account. The result describes what was granted,
+     * including a plain-English `summary` to show the customer.
+     */
+    redeemPromo(code: string): Promise<PromotionRedemption>;
+    /** Every promotion on this account, live and expired, newest first. */
+    promotions(): Promise<PromotionRedemption[]>;
+    /**
+     * The discount currently being applied, or null.
+     *
+     * Discounts do not stack: holding more than one means the most generous
+     * applies, and this is the one that will come off the next request.
+     */
+    activePromotion(): Promise<PromotionRedemption | null>;
+    /**
      * Download a key's full request history for auditing.
      *
      * Returns the raw text rather than parsed rows, because the usual destination
@@ -638,4 +676,4 @@ declare const DEFAULT_BASE_URL = "https://silkllm-backend.169.58.53.167.nip.io";
 /** Return the base URL to talk to, without a trailing slash. */
 declare function resolveBaseUrl(explicit?: string): string;
 
-export { type ApiKey, type AudioInput, type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type BudgetPool, type CloneVoiceOptions, type CloneVoiceResult, type ContentPart, type CreateKeyOptions, DEFAULT_BASE_URL, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type KeyControls, KeyLimitExceeded, KeyRateLimited, KeyScopeError, type KeyUsage, type KeyUsageEntry, type Message, ModelNotFoundError, type ModelsResponse, PoolLimitExceeded, ProviderError, type ProviderKey, RateLimitError, SIGNATURE_HEADER, SilkLLM, SilkLLMError, type SpeechToSpeechOptions, TIMESTAMP_HEADER, type TrialStatus, type UpdateKeyOptions, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, type Webhook, audioPart, SilkLLM as default, imagePart, resolveBaseUrl, sign, textPart, verifyWebhook };
+export { type ApiKey, type AudioInput, type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type BudgetPool, type CloneVoiceOptions, type CloneVoiceResult, type ContentPart, type CreateKeyOptions, DEFAULT_BASE_URL, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type KeyControls, KeyLimitExceeded, KeyRateLimited, KeyScopeError, type KeyUsage, type KeyUsageEntry, type Message, ModelNotFoundError, type ModelsResponse, PoolLimitExceeded, type PromotionRedemption, ProviderError, type ProviderKey, RateLimitError, SIGNATURE_HEADER, SilkLLM, SilkLLMError, type SpeechToSpeechOptions, TIMESTAMP_HEADER, type TrialStatus, type UpdateKeyOptions, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, type Webhook, audioPart, SilkLLM as default, imagePart, resolveBaseUrl, sign, textPart, verifyWebhook };
