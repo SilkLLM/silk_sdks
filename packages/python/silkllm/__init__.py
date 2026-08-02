@@ -21,6 +21,7 @@ from silkllm.types import (
 )
 from silkllm.exceptions import (
     KeyLimitExceeded, PoolLimitExceeded, KeyScopeError, KeyRateLimited,
+    PromotionError, PromotionRateLimited, AllocationExceedsBalance, ValidationError,
     SilkLLMError, AuthenticationError, InsufficientBalanceError,
     ModelNotFoundError, RateLimitError, ProviderError,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "text_part", "image_part", "audio_part",
     "SilkLLMError", "AuthenticationError", "InsufficientBalanceError",
     "KeyLimitExceeded", "PoolLimitExceeded", "KeyScopeError", "KeyRateLimited",
+    "PromotionError", "PromotionRateLimited", "AllocationExceedsBalance", "ValidationError",
     "ModelNotFoundError", "RateLimitError", "ProviderError",
 ]
 

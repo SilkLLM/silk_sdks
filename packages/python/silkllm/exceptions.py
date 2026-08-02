@@ -100,6 +100,55 @@ class KeyScopeError(SilkLLMError):
     """
 
 
+class PromotionError(SilkLLMError):
+    """
+    A promo code that could not be redeemed.
+
+    One class rather than a family, mirroring the API. Codes are secrets worth
+    money, so an unknown code and a code reserved for somebody else answer
+    identically; branching on the difference is not possible by design, and a
+    client that tried would be reading a distinction that is not there.
+
+    `code` is "promotion_invalid" for anything unusable, and
+    "promotion_already_redeemed" when this account has had it before, which is
+    the one case worth telling a customer apart from the rest.
+    """
+
+
+class PromotionRateLimited(SilkLLMError):
+    """
+    Too many code attempts from this account.
+
+    Clears on its own. `details["retry_after"]` is the wait in seconds.
+    """
+
+    def __init__(self, message: str, **kw):
+        super().__init__(message, **kw)
+        self.retry_after = self.details.get("retry_after")
+
+
+class AllocationExceedsBalance(SilkLLMError):
+    """
+    Raised when a spend limit would promise more credit than the account holds.
+
+    Spend limits are allocations that compete for one balance, so this is not
+    "you are out of money": it is "you have already promised that money to
+    another key or budget". `details` carries balance, allocated, available and
+    the shortfall, so an application can offer the maximum that would be
+    accepted instead of guessing.
+    """
+
+    def __init__(self, message: str, **kw):
+        super().__init__(message, **kw)
+        self.available = self.details.get("available")
+        self.balance = self.details.get("balance")
+        self.shortfall = self.details.get("shortfall")
+
+
+class ValidationError(SilkLLMError):
+    """The request body was rejected. `message` names the offending field."""
+
+
 class KeyRateLimited(SilkLLMError):
     """
     Raised when a key exceeded its own requests-per-minute ceiling.
@@ -113,6 +162,11 @@ class KeyRateLimited(SilkLLMError):
 #: before the status code, because several codes share one status.
 ERROR_CODES = {
     "key_limit_exceeded": KeyLimitExceeded,
+    "promotion_invalid": PromotionError,
+    "promotion_already_redeemed": PromotionError,
+    "promotion_rate_limited": PromotionRateLimited,
+    "allocation_exceeds_balance": AllocationExceedsBalance,
+    "validation_error": ValidationError,
     "pool_limit_exceeded": PoolLimitExceeded,
     "key_scope_denied": KeyScopeError,
     "key_rate_limited": KeyRateLimited,
@@ -123,7 +177,8 @@ __all__ = [
     "SilkLLMError", "AuthenticationError", "InsufficientBalanceError",
     "ModelNotFoundError", "RateLimitError", "ProviderError",
     "KeyLimitExceeded", "PoolLimitExceeded", "KeyScopeError", "KeyRateLimited",
-    "ERROR_CODES",
+    "PromotionError", "PromotionRateLimited", "AllocationExceedsBalance",
+    "ValidationError", "ERROR_CODES",
 ]
 
 # EOF silkllm-sdks/packages/python/silkllm/exceptions.py

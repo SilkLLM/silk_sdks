@@ -223,6 +223,52 @@ account balance can.
 
 ---
 
+### Reacting to every error
+
+Each failure raises its own class, carrying the API's `code`, the HTTP
+`status_code`, and the figures behind the message in `details`.
+
+```python
+from silkllm import (
+    KeyLimitExceeded, PoolLimitExceeded, KeyScopeError, KeyRateLimited,
+    AllocationExceedsBalance, PromotionError, PromotionRateLimited,
+    InsufficientBalanceError, ValidationError,
+)
+
+try:
+    client.generate(messages=[{"role": "user", "content": "Hello"}])
+except KeyLimitExceeded as e:
+    raise_limit(e.details["limit"], e.details["spent"])
+except PoolLimitExceeded as e:
+    notify_team(e.details["pool_name"])
+except KeyScopeError as e:
+    log(f"this key may not call {e.details['model']}")
+except KeyRateLimited as e:
+    sleep(e.details["retry_after"])
+except InsufficientBalanceError:
+    top_up()
+```
+
+| Class | Code | Status |
+|---|---|---|
+| `KeyLimitExceeded` | `key_limit_exceeded` | 402 |
+| `PoolLimitExceeded` | `pool_limit_exceeded` | 402 |
+| `InsufficientBalanceError` | `insufficient_balance` | 402 |
+| `KeyScopeError` | `key_scope_denied` | 403 |
+| `KeyRateLimited` | `key_rate_limited` | 429 |
+| `AllocationExceedsBalance` | `allocation_exceeds_balance` | 400 |
+| `PromotionError` | `promotion_invalid`, `promotion_already_redeemed` | 400 |
+| `PromotionRateLimited` | `promotion_rate_limited` | 429 |
+| `ValidationError` | `validation_error` | 422 |
+
+`AllocationExceedsBalance` carries `available` and `shortfall`, so a client can
+offer the largest limit that would be accepted rather than guessing.
+Promotion failures share one class on purpose: an unknown code and one reserved
+for another account answer identically, so that distinction is not available to
+branch on.
+
+---
+
 ## Promotions and promo codes
 
 A promotion discounts **SilkLLM's own fee**, the margin added on top of what a

@@ -19,6 +19,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/index.ts
 var index_exports = {};
 __export(index_exports, {
+  AllocationExceedsBalance: () => AllocationExceedsBalance,
   AuthenticationError: () => AuthenticationError,
   DEFAULT_BASE_URL: () => DEFAULT_BASE_URL,
   InsufficientBalanceError: () => InsufficientBalanceError,
@@ -27,12 +28,15 @@ __export(index_exports, {
   KeyScopeError: () => KeyScopeError,
   ModelNotFoundError: () => ModelNotFoundError,
   PoolLimitExceeded: () => PoolLimitExceeded,
+  PromotionError: () => PromotionError,
+  PromotionRateLimited: () => PromotionRateLimited,
   ProviderError: () => ProviderError,
   RateLimitError: () => RateLimitError,
   SIGNATURE_HEADER: () => SIGNATURE_HEADER,
   SilkLLM: () => SilkLLM,
   SilkLLMError: () => SilkLLMError,
   TIMESTAMP_HEADER: () => TIMESTAMP_HEADER,
+  ValidationError: () => ValidationError,
   audioPart: () => audioPart,
   default: () => SilkLLM,
   imagePart: () => imagePart,
@@ -95,8 +99,21 @@ var KeyScopeError = class extends SilkLLMError {
 };
 var KeyRateLimited = class extends SilkLLMError {
 };
+var PromotionError = class extends SilkLLMError {
+};
+var PromotionRateLimited = class extends SilkLLMError {
+};
+var AllocationExceedsBalance = class extends SilkLLMError {
+};
+var ValidationError = class extends SilkLLMError {
+};
 var ERROR_CODES = {
   key_limit_exceeded: KeyLimitExceeded,
+  promotion_invalid: PromotionError,
+  promotion_already_redeemed: PromotionError,
+  promotion_rate_limited: PromotionRateLimited,
+  allocation_exceeds_balance: AllocationExceedsBalance,
+  validation_error: ValidationError,
   pool_limit_exceeded: PoolLimitExceeded,
   key_scope_denied: KeyScopeError,
   key_rate_limited: KeyRateLimited,
@@ -564,6 +581,7 @@ async function verifyWebhook(secret, body, signature) {
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  AllocationExceedsBalance,
   AuthenticationError,
   DEFAULT_BASE_URL,
   InsufficientBalanceError,
@@ -572,12 +590,15 @@ async function verifyWebhook(secret, body, signature) {
   KeyScopeError,
   ModelNotFoundError,
   PoolLimitExceeded,
+  PromotionError,
+  PromotionRateLimited,
   ProviderError,
   RateLimitError,
   SIGNATURE_HEADER,
   SilkLLM,
   SilkLLMError,
   TIMESTAMP_HEADER,
+  ValidationError,
   audioPart,
   imagePart,
   resolveBaseUrl,

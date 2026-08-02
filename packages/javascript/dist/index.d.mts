@@ -410,6 +410,33 @@ declare class KeyScopeError extends SilkLLMError {
 /** The key exceeded its own requests-per-minute ceiling. Clears on its own. */
 declare class KeyRateLimited extends SilkLLMError {
 }
+/**
+ * A promo code that could not be redeemed.
+ *
+ * One class rather than a family, mirroring the API. Codes are secrets worth
+ * money, so an unknown code and one reserved for somebody else answer
+ * identically, and that distinction is deliberately not available to branch on.
+ * `code` is `promotion_already_redeemed` when this account has had it before,
+ * and `promotion_invalid` for everything else.
+ */
+declare class PromotionError extends SilkLLMError {
+}
+/** Too many code attempts. `details.retry_after` is the wait in seconds. */
+declare class PromotionRateLimited extends SilkLLMError {
+}
+/**
+ * A spend limit that would promise more credit than the account holds.
+ *
+ * Not "you are out of money": spend limits are allocations competing for one
+ * balance, so this means the money is already promised elsewhere.
+ * `details` carries `balance`, `allocated`, `available` and `shortfall`, so an
+ * application can offer the maximum that would be accepted.
+ */
+declare class AllocationExceedsBalance extends SilkLLMError {
+}
+/** The request body was rejected. `message` names the offending field. */
+declare class ValidationError extends SilkLLMError {
+}
 declare class SilkLLM {
     private apiKey;
     private baseUrl;
@@ -676,4 +703,4 @@ declare const DEFAULT_BASE_URL = "https://silkllm-backend.169.58.53.167.nip.io";
 /** Return the base URL to talk to, without a trailing slash. */
 declare function resolveBaseUrl(explicit?: string): string;
 
-export { type ApiKey, type AudioInput, type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type BudgetPool, type CloneVoiceOptions, type CloneVoiceResult, type ContentPart, type CreateKeyOptions, DEFAULT_BASE_URL, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type KeyControls, KeyLimitExceeded, KeyRateLimited, KeyScopeError, type KeyUsage, type KeyUsageEntry, type Message, ModelNotFoundError, type ModelsResponse, PoolLimitExceeded, type PromotionRedemption, ProviderError, type ProviderKey, RateLimitError, SIGNATURE_HEADER, SilkLLM, SilkLLMError, type SpeechToSpeechOptions, TIMESTAMP_HEADER, type TrialStatus, type UpdateKeyOptions, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, type Webhook, audioPart, SilkLLM as default, imagePart, resolveBaseUrl, sign, textPart, verifyWebhook };
+export { AllocationExceedsBalance, type ApiKey, type AudioInput, type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type BudgetPool, type CloneVoiceOptions, type CloneVoiceResult, type ContentPart, type CreateKeyOptions, DEFAULT_BASE_URL, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type KeyControls, KeyLimitExceeded, KeyRateLimited, KeyScopeError, type KeyUsage, type KeyUsageEntry, type Message, ModelNotFoundError, type ModelsResponse, PoolLimitExceeded, PromotionError, PromotionRateLimited, type PromotionRedemption, ProviderError, type ProviderKey, RateLimitError, SIGNATURE_HEADER, SilkLLM, SilkLLMError, type SpeechToSpeechOptions, TIMESTAMP_HEADER, type TrialStatus, type UpdateKeyOptions, type UpdateProviderKeyOptions, type UsageResponse, ValidationError, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, type Webhook, audioPart, SilkLLM as default, imagePart, resolveBaseUrl, sign, textPart, verifyWebhook };

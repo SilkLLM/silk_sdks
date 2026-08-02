@@ -50,8 +50,21 @@ var KeyScopeError = class extends SilkLLMError {
 };
 var KeyRateLimited = class extends SilkLLMError {
 };
+var PromotionError = class extends SilkLLMError {
+};
+var PromotionRateLimited = class extends SilkLLMError {
+};
+var AllocationExceedsBalance = class extends SilkLLMError {
+};
+var ValidationError = class extends SilkLLMError {
+};
 var ERROR_CODES = {
   key_limit_exceeded: KeyLimitExceeded,
+  promotion_invalid: PromotionError,
+  promotion_already_redeemed: PromotionError,
+  promotion_rate_limited: PromotionRateLimited,
+  allocation_exceeds_balance: AllocationExceedsBalance,
+  validation_error: ValidationError,
   pool_limit_exceeded: PoolLimitExceeded,
   key_scope_denied: KeyScopeError,
   key_rate_limited: KeyRateLimited,
@@ -518,6 +531,7 @@ async function verifyWebhook(secret, body, signature) {
   return diff === 0;
 }
 export {
+  AllocationExceedsBalance,
   AuthenticationError,
   DEFAULT_BASE_URL,
   InsufficientBalanceError,
@@ -526,12 +540,15 @@ export {
   KeyScopeError,
   ModelNotFoundError,
   PoolLimitExceeded,
+  PromotionError,
+  PromotionRateLimited,
   ProviderError,
   RateLimitError,
   SIGNATURE_HEADER,
   SilkLLM,
   SilkLLMError,
   TIMESTAMP_HEADER,
+  ValidationError,
   audioPart,
   SilkLLM as default,
   imagePart,

@@ -67,9 +67,41 @@ export class KeyScopeError extends SilkLLMError {}
 /** The key exceeded its own requests-per-minute ceiling. Clears on its own. */
 export class KeyRateLimited extends SilkLLMError {}
 
+/**
+ * A promo code that could not be redeemed.
+ *
+ * One class rather than a family, mirroring the API. Codes are secrets worth
+ * money, so an unknown code and one reserved for somebody else answer
+ * identically, and that distinction is deliberately not available to branch on.
+ * `code` is `promotion_already_redeemed` when this account has had it before,
+ * and `promotion_invalid` for everything else.
+ */
+export class PromotionError extends SilkLLMError {}
+
+/** Too many code attempts. `details.retry_after` is the wait in seconds. */
+export class PromotionRateLimited extends SilkLLMError {}
+
+/**
+ * A spend limit that would promise more credit than the account holds.
+ *
+ * Not "you are out of money": spend limits are allocations competing for one
+ * balance, so this means the money is already promised elsewhere.
+ * `details` carries `balance`, `allocated`, `available` and `shortfall`, so an
+ * application can offer the maximum that would be accepted.
+ */
+export class AllocationExceedsBalance extends SilkLLMError {}
+
+/** The request body was rejected. `message` names the offending field. */
+export class ValidationError extends SilkLLMError {}
+
 /** Error codes the API sends, mapped to the class thrown for them. */
 const ERROR_CODES: Record<string, typeof SilkLLMError> = {
   key_limit_exceeded: KeyLimitExceeded,
+  promotion_invalid: PromotionError,
+  promotion_already_redeemed: PromotionError,
+  promotion_rate_limited: PromotionRateLimited,
+  allocation_exceeds_balance: AllocationExceedsBalance,
+  validation_error: ValidationError,
   pool_limit_exceeded: PoolLimitExceeded,
   key_scope_denied: KeyScopeError,
   key_rate_limited: KeyRateLimited,
