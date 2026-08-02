@@ -14,6 +14,7 @@ from silkllm.types import (
     GenerateResponse, ModelsResponse,
     BalanceResponse, UsageResponse, Message, ProviderKey, TrialStatus,
     ImageResult, AudioResult, VideoResult, VoiceSettings, Voice,
+    ApiKey, KeyUsage,
 )
 from silkllm.exceptions import (
     SilkLLMError, AuthenticationError, InsufficientBalanceError,
@@ -304,6 +305,103 @@ class Client:
         return TrialStatus(**response)
 
     # ── BYOK marketplace: deposit and manage your own provider keys ───────────
+
+    # ── API key management ───────────────────────────────────────────────
+    # A key can be given a spend cap. Once the cost charged to it reaches the
+    # cap, that key refuses requests with HTTP 402 and the code
+    # `key_limit_exceeded`, while the rest of the account carries on.
+
+    def create_key(self, name: str, spend_limit_usd: Optional[float] = None) -> ApiKey:
+        """
+        Create an API key, optionally capped.
+
+        The plaintext key is on the returned object as `.key` and is never
+        retrievable again, so store it now.
+
+            key = client.create_key("CI pipeline", spend_limit_usd=5.0)
+            print(key.key)   # the only time you will see this
+
+        Args:
+            name: Label for the key, so you know which one to revoke later.
+            spend_limit_usd: Cap on how much of your balance this key may spend.
+                             Omit for an uncapped key.
+        """
+        payload = {"name": name, "spend_limit_usd": spend_limit_usd}
+        return ApiKey(**self._request("POST", "/api/keys", json=payload))
+
+    def list_keys(self) -> List[ApiKey]:
+        """List your API keys, each with its cap, spend and remaining budget."""
+        return [ApiKey(**k) for k in self._request("GET", "/api/keys")]
+
+    def update_key(
+        self,
+        key_id: str,
+        name: Optional[str] = None,
+        spend_limit_usd: Optional[float] = None,
+        clear_spend_limit: bool = False,
+        is_active: Optional[bool] = None,
+    ) -> ApiKey:
+        """
+        Rename a key, change its cap, or disable it.
+
+        Raising the cap on an exhausted key makes it work again immediately
+        without clearing what it has already spent. Pass clear_spend_limit=True
+        to remove the cap entirely; a None spend_limit_usd means "leave it as
+        it is", which is why removal needs its own flag.
+        """
+        payload: Dict[str, Any] = {"clear_spend_limit": clear_spend_limit}
+        if name is not None:
+            payload["name"] = name
+        if spend_limit_usd is not None:
+            payload["spend_limit_usd"] = spend_limit_usd
+        if is_active is not None:
+            payload["is_active"] = is_active
+        return ApiKey(**self._request("PATCH", f"/api/keys/{key_id}", json=payload))
+
+    def revoke_key(self, key_id: str) -> None:
+        """
+        Revoke a key. It stops authenticating immediately.
+
+        Soft delete: the usage history is kept for audit.
+        """
+        self._request("DELETE", f"/api/keys/{key_id}")
+
+    def key_usage(
+        self,
+        key_id: str,
+        page: int = 1,
+        page_size: int = 50,
+        status: Optional[str] = None,
+    ) -> KeyUsage:
+        """
+        Fetch a key's request history, newest first, with lifetime totals.
+
+        Args:
+            status: Filter the page, e.g. "ok" or "limit_exceeded". The totals
+                    always cover the whole history, so filtering does not change
+                    what the key appears to have spent.
+        """
+        params = {"page": page, "page_size": page_size}
+        if status:
+            params["status"] = status
+        return KeyUsage(**self._request("GET", f"/api/keys/{key_id}/usage", params=params))
+
+    def reset_key_usage(self, key_id: str) -> ApiKey:
+        """
+        Zero a key's spend counter, restoring its full budget.
+
+        This refunds nothing: the money already left the account balance. It
+        clears only the counter the cap is measured against, and leaves the
+        usage history untouched.
+        """
+        response = self._request("POST", f"/api/keys/{key_id}/reset")
+        # The reset endpoint answers with a summary rather than the full key.
+        return ApiKey(
+            id=response["id"], name=response["name"], created_at="",
+            is_active=True, spent_usd=response["spent_usd"],
+            spend_limit_usd=response.get("spend_limit_usd"),
+            limit_reset_at=response.get("limit_reset_at"),
+        )
 
     def deposit_provider_key(
         self,

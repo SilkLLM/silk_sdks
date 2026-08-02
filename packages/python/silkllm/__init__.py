@@ -15,6 +15,7 @@ from silkllm.client import Client
 from silkllm.types import (
     GenerateResponse, ModelsResponse, BalanceResponse, UsageResponse, Message, ProviderKey, TrialStatus,
     ImageResult, AudioResult, VideoResult, VoiceSettings, Voice,
+    ApiKey, KeyUsage, KeyUsageEntry,
     text_part, image_part, audio_part,
 )
 from silkllm.exceptions import (
@@ -27,6 +28,7 @@ __all__ = [
     "Client",
     "GenerateResponse", "ModelsResponse", "BalanceResponse", "UsageResponse", "Message", "ProviderKey", "TrialStatus",
     "ImageResult", "AudioResult", "VideoResult", "VoiceSettings", "Voice",
+    "ApiKey", "KeyUsage", "KeyUsageEntry",
     "text_part", "image_part", "audio_part",
     "SilkLLMError", "AuthenticationError", "InsufficientBalanceError",
     "ModelNotFoundError", "RateLimitError", "ProviderError",

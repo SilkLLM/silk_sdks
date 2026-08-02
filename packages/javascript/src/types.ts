@@ -229,4 +229,78 @@ export interface UpdateProviderKeyOptions {
   declared_budget_usd?: number;
 }
 
+/**
+ * One of your SilkLLM API keys.
+ *
+ * `spend_limit_usd` caps how much of the account balance this key may draw.
+ * null means uncapped. It is not a separate wallet: three keys capped at $10 do
+ * not reserve $30, they each simply stop at $10 of spend.
+ */
+export interface ApiKey {
+  id: string;
+  name: string;
+  created_at: string;
+  is_active: boolean;
+  last_used: string | null;
+  spend_limit_usd: number | null;
+  spent_usd: number;
+  /** Budget left, or null when the key is uncapped. */
+  remaining_usd: number | null;
+  /** True once a capped key has used its budget up and is refusing requests. */
+  is_exhausted: boolean;
+  limit_reset_at: string | null;
+  /** Only present on the response that creates the key. Never retrievable again. */
+  key?: string;
+}
+
+/**
+ * One request attributed to an API key.
+ *
+ * Refused attempts appear here too, with a `status` other than "ok". A run of
+ * "limit_exceeded" rows is what a key hitting its cap looks like.
+ */
+export interface KeyUsageEntry {
+  id: string;
+  created_at: string;
+  endpoint: string;
+  status: "ok" | "limit_exceeded" | "insufficient_balance" | "provider_error" | string;
+  cost_usd: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  requested_model: string | null;
+  served_model: string | null;
+  provider_id: string | null;
+  detail: string | null;
+  latency_ms: number | null;
+}
+
+/** A page of a key's history, plus totals over its whole lifetime. */
+export interface KeyUsage {
+  key_id: string;
+  key_name: string;
+  total: number;
+  page: number;
+  page_size: number;
+  total_cost_usd: number;
+  total_requests: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  entries: KeyUsageEntry[];
+}
+
+export interface CreateKeyOptions {
+  name: string;
+  /** Cap on how much of your balance this key may spend. Omit for uncapped. */
+  spendLimitUsd?: number;
+}
+
+export interface UpdateKeyOptions {
+  name?: string;
+  /** New cap. Use clearSpendLimit to remove one instead. */
+  spendLimitUsd?: number;
+  /** Remove the cap entirely, making the key uncapped. */
+  clearSpendLimit?: boolean;
+  isActive?: boolean;
+}
+
 // EOF silkllm-sdks/packages/javascript/src/types.ts

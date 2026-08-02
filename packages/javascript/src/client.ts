@@ -12,6 +12,7 @@ import type {
   UpdateProviderKeyOptions, TrialStatus,
   ImageResult, AudioResult, VideoResult, ImageOptions, AudioOptions, VideoOptions,
   VoicesResponse, ContentPart, SpeechToSpeechOptions, CloneVoiceOptions, CloneVoiceResult, AudioInput,
+  ApiKey, KeyUsage, CreateKeyOptions, UpdateKeyOptions,
 } from "./types";
 import { resolveBaseUrl } from "./endpoint";
 
@@ -183,6 +184,81 @@ export class SilkLLM {
    * nothing while a public key still serves the marketplace. The secret is
    * encrypted at rest and never returned.
    */
+  // ── API key management ──────────────────────────────────────────────────
+  // A key can be given a spend cap. Once the cost charged to it reaches the
+  // cap, that key refuses requests with HTTP 402 and the code
+  // `key_limit_exceeded`, while the rest of the account carries on.
+
+  /**
+   * Create an API key, optionally capped.
+   *
+   * The plaintext key is on `.key` of the result and is never retrievable
+   * again, so store it now.
+   *
+   *   const key = await client.createKey({ name: "CI", spendLimitUsd: 5 });
+   *   console.log(key.key); // the only time you will see this
+   */
+  async createKey(options: CreateKeyOptions): Promise<ApiKey> {
+    return this._request("POST", "/api/keys", {
+      name: options.name,
+      spend_limit_usd: options.spendLimitUsd ?? null,
+    }) as Promise<ApiKey>;
+  }
+
+  /** List your API keys, each with its cap, spend and remaining budget. */
+  async listKeys(): Promise<ApiKey[]> {
+    return this._request("GET", "/api/keys") as Promise<ApiKey[]>;
+  }
+
+  /**
+   * Rename a key, change its cap, or disable it.
+   *
+   * Raising the cap on an exhausted key makes it work again immediately without
+   * clearing what it has already spent. Pass `clearSpendLimit` to remove the cap
+   * entirely; omitting `spendLimitUsd` means "leave it as it is", which is why
+   * removal needs its own flag.
+   */
+  async updateKey(keyId: string, changes: UpdateKeyOptions): Promise<ApiKey> {
+    const body: Record<string, unknown> = { clear_spend_limit: changes.clearSpendLimit ?? false };
+    if (changes.name !== undefined) body.name = changes.name;
+    if (changes.spendLimitUsd !== undefined) body.spend_limit_usd = changes.spendLimitUsd;
+    if (changes.isActive !== undefined) body.is_active = changes.isActive;
+    return this._request("PATCH", `/api/keys/${keyId}`, body) as Promise<ApiKey>;
+  }
+
+  /** Revoke a key. It stops authenticating at once; its history is kept. */
+  async revokeKey(keyId: string): Promise<void> {
+    await this._request("DELETE", `/api/keys/${keyId}`);
+  }
+
+  /**
+   * A key's request history, newest first, with lifetime totals.
+   *
+   * `status` filters the page only. The totals always cover the whole history,
+   * so filtering never changes what the key appears to have spent.
+   */
+  async keyUsage(
+    keyId: string,
+    options: { page?: number; pageSize?: number; status?: string } = {},
+  ): Promise<KeyUsage> {
+    const q = new URLSearchParams({
+      page: String(options.page ?? 1),
+      page_size: String(options.pageSize ?? 50),
+    });
+    if (options.status) q.set("status", options.status);
+    return this._request("GET", `/api/keys/${keyId}/usage?${q}`) as Promise<KeyUsage>;
+  }
+
+  /**
+   * Zero a key's spend counter, restoring its full budget.
+   *
+   * Refunds nothing: the money already left the account balance. It clears only
+   * the counter the cap is measured against, and leaves the history untouched.
+   */
+  async resetKeyUsage(keyId: string): Promise<{ id: string; name: string; spent_usd: number; message: string }> {
+    return this._request("POST", `/api/keys/${keyId}/reset`) as Promise<any>;
+  }
+
   async depositProviderKey(options: DepositProviderKeyOptions): Promise<ProviderKey> {
     const body = {
       provider_id: options.providerId,

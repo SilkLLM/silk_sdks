@@ -220,6 +220,75 @@ interface UpdateProviderKeyOptions {
     daily_limit_usd?: number;
     declared_budget_usd?: number;
 }
+/**
+ * One of your SilkLLM API keys.
+ *
+ * `spend_limit_usd` caps how much of the account balance this key may draw.
+ * null means uncapped. It is not a separate wallet: three keys capped at $10 do
+ * not reserve $30, they each simply stop at $10 of spend.
+ */
+interface ApiKey {
+    id: string;
+    name: string;
+    created_at: string;
+    is_active: boolean;
+    last_used: string | null;
+    spend_limit_usd: number | null;
+    spent_usd: number;
+    /** Budget left, or null when the key is uncapped. */
+    remaining_usd: number | null;
+    /** True once a capped key has used its budget up and is refusing requests. */
+    is_exhausted: boolean;
+    limit_reset_at: string | null;
+    /** Only present on the response that creates the key. Never retrievable again. */
+    key?: string;
+}
+/**
+ * One request attributed to an API key.
+ *
+ * Refused attempts appear here too, with a `status` other than "ok". A run of
+ * "limit_exceeded" rows is what a key hitting its cap looks like.
+ */
+interface KeyUsageEntry {
+    id: string;
+    created_at: string;
+    endpoint: string;
+    status: "ok" | "limit_exceeded" | "insufficient_balance" | "provider_error" | string;
+    cost_usd: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    requested_model: string | null;
+    served_model: string | null;
+    provider_id: string | null;
+    detail: string | null;
+    latency_ms: number | null;
+}
+/** A page of a key's history, plus totals over its whole lifetime. */
+interface KeyUsage {
+    key_id: string;
+    key_name: string;
+    total: number;
+    page: number;
+    page_size: number;
+    total_cost_usd: number;
+    total_requests: number;
+    total_prompt_tokens: number;
+    total_completion_tokens: number;
+    entries: KeyUsageEntry[];
+}
+interface CreateKeyOptions {
+    name: string;
+    /** Cap on how much of your balance this key may spend. Omit for uncapped. */
+    spendLimitUsd?: number;
+}
+interface UpdateKeyOptions {
+    name?: string;
+    /** New cap. Use clearSpendLimit to remove one instead. */
+    spendLimitUsd?: number;
+    /** Remove the cap entirely, making the key uncapped. */
+    clearSpendLimit?: boolean;
+    isActive?: boolean;
+}
 
 /**
  * client.ts
@@ -297,6 +366,52 @@ declare class SilkLLM {
      * nothing while a public key still serves the marketplace. The secret is
      * encrypted at rest and never returned.
      */
+    /**
+     * Create an API key, optionally capped.
+     *
+     * The plaintext key is on `.key` of the result and is never retrievable
+     * again, so store it now.
+     *
+     *   const key = await client.createKey({ name: "CI", spendLimitUsd: 5 });
+     *   console.log(key.key); // the only time you will see this
+     */
+    createKey(options: CreateKeyOptions): Promise<ApiKey>;
+    /** List your API keys, each with its cap, spend and remaining budget. */
+    listKeys(): Promise<ApiKey[]>;
+    /**
+     * Rename a key, change its cap, or disable it.
+     *
+     * Raising the cap on an exhausted key makes it work again immediately without
+     * clearing what it has already spent. Pass `clearSpendLimit` to remove the cap
+     * entirely; omitting `spendLimitUsd` means "leave it as it is", which is why
+     * removal needs its own flag.
+     */
+    updateKey(keyId: string, changes: UpdateKeyOptions): Promise<ApiKey>;
+    /** Revoke a key. It stops authenticating at once; its history is kept. */
+    revokeKey(keyId: string): Promise<void>;
+    /**
+     * A key's request history, newest first, with lifetime totals.
+     *
+     * `status` filters the page only. The totals always cover the whole history,
+     * so filtering never changes what the key appears to have spent.
+     */
+    keyUsage(keyId: string, options?: {
+        page?: number;
+        pageSize?: number;
+        status?: string;
+    }): Promise<KeyUsage>;
+    /**
+     * Zero a key's spend counter, restoring its full budget.
+     *
+     * Refunds nothing: the money already left the account balance. It clears only
+     * the counter the cap is measured against, and leaves the history untouched.
+     */
+    resetKeyUsage(keyId: string): Promise<{
+        id: string;
+        name: string;
+        spent_usd: number;
+        message: string;
+    }>;
     depositProviderKey(options: DepositProviderKeyOptions): Promise<ProviderKey>;
     /** List your deposited provider keys with earnings and requests served. */
     listProviderKeys(): Promise<ProviderKey[]>;
@@ -333,4 +448,4 @@ declare const DEFAULT_BASE_URL = "https://silkllm-backend.169.58.53.167.nip.io";
 /** Return the base URL to talk to, without a trailing slash. */
 declare function resolveBaseUrl(explicit?: string): string;
 
-export { type AudioInput, type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type CloneVoiceOptions, type CloneVoiceResult, type ContentPart, DEFAULT_BASE_URL, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type SpeechToSpeechOptions, type TrialStatus, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, audioPart, SilkLLM as default, imagePart, resolveBaseUrl, textPart };
+export { type ApiKey, type AudioInput, type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type CloneVoiceOptions, type CloneVoiceResult, type ContentPart, type CreateKeyOptions, DEFAULT_BASE_URL, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type KeyUsage, type KeyUsageEntry, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type SpeechToSpeechOptions, type TrialStatus, type UpdateKeyOptions, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, audioPart, SilkLLM as default, imagePart, resolveBaseUrl, textPart };

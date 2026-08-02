@@ -212,4 +212,73 @@ class ProviderKey:
     requests_served: int = 0
     provider_cost_served: float = 0.0
 
+
+@dataclass
+class ApiKey:
+    """
+    One of your SilkLLM API keys.
+
+    `spend_limit_usd` is a cap on how much of the account balance this key may
+    draw. None means uncapped. It is not a separate wallet: three keys capped at
+    $10 do not reserve $30, they each simply stop at $10 of spend.
+    """
+    id: str
+    name: str
+    created_at: str
+    is_active: bool
+    spent_usd: float = 0.0
+    spend_limit_usd: Optional[float] = None
+    #: Budget left, or None when the key is uncapped.
+    remaining_usd: Optional[float] = None
+    #: True once a capped key has used its budget up and is refusing requests.
+    is_exhausted: bool = False
+    last_used: Optional[str] = None
+    limit_reset_at: Optional[str] = None
+    #: Only present in the response that creates the key. Never retrievable again.
+    key: Optional[str] = None
+
+
+@dataclass
+class KeyUsageEntry:
+    """
+    One request attributed to an API key.
+
+    Refused attempts appear here too, with `status` set to something other than
+    "ok". A run of "limit_exceeded" rows is what a key hitting its cap looks
+    like, which is usually what you are after when a deployment stops working.
+    """
+    id: str
+    created_at: str
+    endpoint: str
+    status: str
+    cost_usd: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    requested_model: Optional[str] = None
+    served_model: Optional[str] = None
+    provider_id: Optional[str] = None
+    detail: Optional[str] = None
+    latency_ms: Optional[int] = None
+
+
+@dataclass
+class KeyUsage:
+    """A page of an API key's history, plus totals over its whole lifetime."""
+    key_id: str
+    key_name: str
+    total: int
+    page: int
+    page_size: int
+    total_cost_usd: float
+    total_requests: int
+    total_prompt_tokens: int
+    total_completion_tokens: int
+    entries: List[KeyUsageEntry] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.entries = [
+            e if isinstance(e, KeyUsageEntry) else KeyUsageEntry(**e) for e in self.entries
+        ]
+
+
 # EOF silkllm-sdks/packages/python/silkllm/types.py
