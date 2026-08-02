@@ -288,19 +288,70 @@ export interface KeyUsage {
   entries: KeyUsageEntry[];
 }
 
-export interface CreateKeyOptions {
-  name: string;
+/**
+ * Limits a key can be created with. All optional: a key with none of them set
+ * behaves exactly as keys always have.
+ */
+export interface KeyControls {
   /** Cap on how much of your balance this key may spend. Omit for uncapped. */
   spendLimitUsd?: number;
+  /** Notify once the key passes this share of its cap, e.g. 80. Needs a cap. */
+  alertAtPercent?: number;
+  /** Restrict the key to these model ids. Anything else is refused with 403. */
+  allowedModels?: string[];
+  /** The same restriction, by provider id. */
+  allowedProviders?: string[];
+  /** Requests-per-minute ceiling for this key alone. Exceeding it gives 429. */
+  rateLimitPerMin?: number;
+  /** Draw on a shared budget as well as this key's own cap. */
+  budgetPoolId?: string;
 }
 
-export interface UpdateKeyOptions {
+export interface CreateKeyOptions extends KeyControls {
+  name: string;
+}
+
+/**
+ * Changes to an existing key.
+ *
+ * Removing a limit needs its own flag: an omitted field has to keep meaning
+ * "leave this as it is", or a call that only renamed a key could never take a
+ * limit off.
+ */
+export interface UpdateKeyOptions extends KeyControls {
   name?: string;
-  /** New cap. Use clearSpendLimit to remove one instead. */
-  spendLimitUsd?: number;
-  /** Remove the cap entirely, making the key uncapped. */
-  clearSpendLimit?: boolean;
   isActive?: boolean;
+  clearSpendLimit?: boolean;
+  clearAlert?: boolean;
+  clearScope?: boolean;
+  clearRateLimit?: boolean;
+  clearBudgetPool?: boolean;
+}
+
+/** A budget several keys draw on together. */
+export interface BudgetPool {
+  id: string;
+  name: string;
+  /** null means the budget groups keys without stopping them. */
+  spend_limit_usd: number | null;
+  spent_usd: number;
+  key_count?: number;
+  created_at: string;
+  limit_reset_at?: string | null;
+}
+
+/** An https endpoint notified when a limit is reached. */
+export interface Webhook {
+  id: string;
+  url: string;
+  events: string[];
+  is_active: boolean;
+  /** Present only in the response that creates it. Never retrievable again. */
+  secret?: string;
+  last_status: number | null;
+  last_error: string | null;
+  last_delivery_at: string | null;
+  consecutive_failures: number;
 }
 
 // EOF silkllm-sdks/packages/javascript/src/types.ts

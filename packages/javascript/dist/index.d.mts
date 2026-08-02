@@ -276,18 +276,66 @@ interface KeyUsage {
     total_completion_tokens: number;
     entries: KeyUsageEntry[];
 }
-interface CreateKeyOptions {
-    name: string;
+/**
+ * Limits a key can be created with. All optional: a key with none of them set
+ * behaves exactly as keys always have.
+ */
+interface KeyControls {
     /** Cap on how much of your balance this key may spend. Omit for uncapped. */
     spendLimitUsd?: number;
+    /** Notify once the key passes this share of its cap, e.g. 80. Needs a cap. */
+    alertAtPercent?: number;
+    /** Restrict the key to these model ids. Anything else is refused with 403. */
+    allowedModels?: string[];
+    /** The same restriction, by provider id. */
+    allowedProviders?: string[];
+    /** Requests-per-minute ceiling for this key alone. Exceeding it gives 429. */
+    rateLimitPerMin?: number;
+    /** Draw on a shared budget as well as this key's own cap. */
+    budgetPoolId?: string;
 }
-interface UpdateKeyOptions {
+interface CreateKeyOptions extends KeyControls {
+    name: string;
+}
+/**
+ * Changes to an existing key.
+ *
+ * Removing a limit needs its own flag: an omitted field has to keep meaning
+ * "leave this as it is", or a call that only renamed a key could never take a
+ * limit off.
+ */
+interface UpdateKeyOptions extends KeyControls {
     name?: string;
-    /** New cap. Use clearSpendLimit to remove one instead. */
-    spendLimitUsd?: number;
-    /** Remove the cap entirely, making the key uncapped. */
-    clearSpendLimit?: boolean;
     isActive?: boolean;
+    clearSpendLimit?: boolean;
+    clearAlert?: boolean;
+    clearScope?: boolean;
+    clearRateLimit?: boolean;
+    clearBudgetPool?: boolean;
+}
+/** A budget several keys draw on together. */
+interface BudgetPool {
+    id: string;
+    name: string;
+    /** null means the budget groups keys without stopping them. */
+    spend_limit_usd: number | null;
+    spent_usd: number;
+    key_count?: number;
+    created_at: string;
+    limit_reset_at?: string | null;
+}
+/** An https endpoint notified when a limit is reached. */
+interface Webhook {
+    id: string;
+    url: string;
+    events: string[];
+    is_active: boolean;
+    /** Present only in the response that creates it. Never retrievable again. */
+    secret?: string;
+    last_status: number | null;
+    last_error: string | null;
+    last_delivery_at: string | null;
+    consecutive_failures: number;
 }
 
 /**
@@ -302,9 +350,21 @@ declare function textPart(text: string): ContentPart;
 declare function imagePart(url: string): ContentPart;
 /** An audio input part; `data` is base64 audio, `format` e.g. "wav" or "mp3". */
 declare function audioPart(data: string, format?: string): ContentPart;
+/**
+ * Base error for everything this client throws.
+ *
+ * `code` is the part worth branching on. Several distinct situations share one
+ * HTTP status, and telling them apart is the difference between raising a key's
+ * limit and topping the account up.
+ */
 declare class SilkLLMError extends Error {
     code: string;
-    constructor(code: string, message: string);
+    statusCode?: number;
+    /** The numbers behind the message, so nobody has to parse the sentence. */
+    details: Record<string, any>;
+    constructor(code: string, message: string, statusCode?: number, 
+    /** The numbers behind the message, so nobody has to parse the sentence. */
+    details?: Record<string, any>);
 }
 declare class AuthenticationError extends SilkLLMError {
 }
@@ -315,6 +375,18 @@ declare class ModelNotFoundError extends SilkLLMError {
 declare class RateLimitError extends SilkLLMError {
 }
 declare class ProviderError extends SilkLLMError {
+}
+/** The key making the request has reached its own spend limit. */
+declare class KeyLimitExceeded extends SilkLLMError {
+}
+/** The shared budget this key draws on has been used up. */
+declare class PoolLimitExceeded extends SilkLLMError {
+}
+/** The key is not allowed to use the model or provider requested. */
+declare class KeyScopeError extends SilkLLMError {
+}
+/** The key exceeded its own requests-per-minute ceiling. Clears on its own. */
+declare class KeyRateLimited extends SilkLLMError {
 }
 declare class SilkLLM {
     private apiKey;
@@ -412,6 +484,65 @@ declare class SilkLLM {
         spent_usd: number;
         message: string;
     }>;
+    /**
+     * Download a key's full request history for auditing.
+     *
+     * Returns the raw text rather than parsed rows, because the usual destination
+     * is a file or a spreadsheet.
+     */
+    exportKeyUsage(keyId: string, format?: "csv" | "json"): Promise<string>;
+    /**
+     * Create a shared budget.
+     *
+     * Attach keys with `createKey({ name, budgetPoolId: budget.id })`. A budget
+     * with no limit only groups keys and reports what they spent.
+     */
+    createBudget(name: string, spendLimitUsd?: number): Promise<BudgetPool>;
+    /** List your shared budgets, each with its limit, spend and key count. */
+    listBudgets(): Promise<BudgetPool[]>;
+    /** Rename a shared budget or change its limit. Removal needs the flag. */
+    updateBudget(budgetId: string, changes: {
+        name?: string;
+        spendLimitUsd?: number;
+        clearSpendLimit?: boolean;
+    }): Promise<BudgetPool>;
+    /**
+     * Zero a shared budget's counter, giving every key on it room again.
+     *
+     * Refunds nothing: that money already left the account balance.
+     */
+    resetBudget(budgetId: string): Promise<BudgetPool>;
+    /**
+     * Delete a shared budget.
+     *
+     * Keys attached to it keep working and fall back to their own caps.
+     */
+    deleteBudget(budgetId: string): Promise<void>;
+    /**
+     * Register an https endpoint for limit events.
+     *
+     * The signing secret is on `.secret` of the result and is shown exactly once.
+     * Store it now; verifying deliveries is impossible without it.
+     */
+    createWebhook(url: string, events: string[]): Promise<Webhook>;
+    /** List your webhooks, with the outcome of the last delivery to each. */
+    listWebhooks(): Promise<Webhook[]>;
+    /** The event names a webhook can subscribe to. */
+    webhookEvents(): Promise<string[]>;
+    /**
+     * Send a signed test delivery and report what the endpoint answered.
+     *
+     * Waits for the delivery rather than queueing it, so the result tells you
+     * whether your signature check works before a real limit is reached.
+     */
+    testWebhook(webhookId: string): Promise<{
+        url: string;
+        delivered: boolean;
+        status_code: number | null;
+        error: string | null;
+    }>;
+    /** Remove a webhook. Deliveries stop and the secret is discarded. */
+    deleteWebhook(webhookId: string): Promise<void>;
     depositProviderKey(options: DepositProviderKeyOptions): Promise<ProviderKey>;
     /** List your deposited provider keys with earnings and requests served. */
     listProviderKeys(): Promise<ProviderKey[]>;
@@ -425,6 +556,43 @@ declare class SilkLLM {
     private _requestForm;
     private _handleError;
 }
+
+/**
+ * webhooks.ts
+ * Verifying an inbound webhook delivery.
+ *
+ * Deliberately free of any dependency on the client: the code that receives a
+ * webhook is a request handler in your app, and it has a secret and some bytes,
+ * not a configured SDK instance.
+ *
+ *   import { verifyWebhook } from "@silkllm/sdk";
+ *
+ *   app.post("/hooks/silkllm", express.raw({ type: "*./*" }), async (req, res) => {
+ *     const ok = await verifyWebhook(SECRET, req.body, req.header("X-Silk-Signature"));
+ *     if (!ok) return res.sendStatus(401);
+ *     const event = JSON.parse(req.body.toString());
+ *   });
+ *
+ * Note the raw body. Re-serialising a parsed object changes key order and
+ * spacing, and the signature is over the exact bytes that were sent.
+ */
+/** The header carrying the signature over the request body. */
+declare const SIGNATURE_HEADER = "X-Silk-Signature";
+/** The header carrying the unix timestamp the delivery was sent at. */
+declare const TIMESTAMP_HEADER = "X-Silk-Timestamp";
+/** Produce the signature for a body, in the same form the header carries. */
+declare function sign(secret: string, body: string | Uint8Array | ArrayBuffer): Promise<string>;
+/**
+ * Check that a delivery really came from SilkLLM.
+ *
+ * The comparison runs in constant time, so a rejection does not leak how much
+ * of a forged signature was correct through how long it took to reject it.
+ *
+ * @param secret The signing secret shown once when the webhook was created.
+ * @param body The exact bytes of the request body, not a re-serialised object.
+ * @param signature The value of the X-Silk-Signature header.
+ */
+declare function verifyWebhook(secret: string, body: string | Uint8Array | ArrayBuffer, signature: string | null | undefined): Promise<boolean>;
 
 /**
  * endpoint.ts
@@ -448,4 +616,4 @@ declare const DEFAULT_BASE_URL = "https://silkllm-backend.169.58.53.167.nip.io";
 /** Return the base URL to talk to, without a trailing slash. */
 declare function resolveBaseUrl(explicit?: string): string;
 
-export { type ApiKey, type AudioInput, type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type CloneVoiceOptions, type CloneVoiceResult, type ContentPart, type CreateKeyOptions, DEFAULT_BASE_URL, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type KeyUsage, type KeyUsageEntry, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type SpeechToSpeechOptions, type TrialStatus, type UpdateKeyOptions, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, audioPart, SilkLLM as default, imagePart, resolveBaseUrl, textPart };
+export { type ApiKey, type AudioInput, type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type BudgetPool, type CloneVoiceOptions, type CloneVoiceResult, type ContentPart, type CreateKeyOptions, DEFAULT_BASE_URL, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type KeyControls, KeyLimitExceeded, KeyRateLimited, KeyScopeError, type KeyUsage, type KeyUsageEntry, type Message, ModelNotFoundError, type ModelsResponse, PoolLimitExceeded, ProviderError, type ProviderKey, RateLimitError, SIGNATURE_HEADER, SilkLLM, SilkLLMError, type SpeechToSpeechOptions, TIMESTAMP_HEADER, type TrialStatus, type UpdateKeyOptions, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, type Webhook, audioPart, SilkLLM as default, imagePart, resolveBaseUrl, sign, textPart, verifyWebhook };

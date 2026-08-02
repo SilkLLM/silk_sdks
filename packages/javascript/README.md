@@ -139,23 +139,159 @@ distinct from an empty account balance, so you can tell "this key is done" from
 "this account is out of money" and react differently.
 
 ```js
-import { InsufficientBalanceError } from "silkllm";
+import { KeyLimitExceeded, InsufficientBalanceError } from "silkllm";
 
 try {
   await client.generate({ messages: [{ role: "user", content: "Hello" }] });
 } catch (err) {
-  if (err instanceof InsufficientBalanceError && err.code === "key_limit_exceeded") {
-    // raise the key's limit, or use a different key
-  } else if (err instanceof InsufficientBalanceError) {
-    // the account itself needs topping up
-  }
+  // The figures are on the error, so nothing has to parse the message.
+  if (err instanceof KeyLimitExceeded) raiseLimit(err.details.limit, err.details.spent);
+  else if (err instanceof InsufficientBalanceError) await topUp();  // the account, not the key
+  else throw err;
 }
 ```
+
+Every error carries `.code`, `.statusCode` and `.details`.
 
 Requests are refused before any provider is contacted, so a key at its limit
 costs nothing when it is blocked. The pre-flight check uses an estimate, so the
 request that crosses the line can finish very slightly over, exactly as the
 account balance can.
+
+---
+
+## Key controls
+
+A spend limit answers "how much". These answer the rest: what a key may call,
+how fast, whose budget it shares, and how you hear about it before a customer
+does. Every control is optional, and a key created without them behaves exactly
+as keys always have.
+
+| Control | What it does | Refused with |
+|---|---|---|
+| `spendLimitUsd` | Caps total spend on this key | `402 key_limit_exceeded` |
+| `alertAtPercent` | Notifies you at this share of the cap | nothing, it warns |
+| `allowedModels` | Restricts the key to named models | `403 key_scope_denied` |
+| `allowedProviders` | The same, by provider | `403 key_scope_denied` |
+| `rateLimitPerMin` | Caps requests per minute for this key alone | `429 key_rate_limited` |
+| `budgetPoolId` | Draws on a shared budget too | `402 pool_limit_exceeded` |
+
+```js
+const key = await client.createKey({
+  name: "CI pipeline",
+  spendLimitUsd: 5.0,        // stops at $5 of spend
+  alertAtPercent: 80,        // warn me at $4
+  allowedModels: ["gpt-4o-mini"],
+  rateLimitPerMin: 30,       // a runaway loop is slowed, not funded
+});
+
+// Taking a control off needs its own flag, for the same reason clearing a spend
+// limit does: an omitted field means "leave this as it is".
+await client.updateKey(key.id, { clearRateLimit: true, clearScope: true });
+```
+
+Checks run in this order before any provider is contacted: rate limit, scope,
+shared budget, the key's own cap, then the account balance. A key that is out of
+budget therefore costs nothing when it is refused, and the error names the first
+thing that actually stopped it.
+
+### Shared budgets
+
+One ceiling for a team, an environment or a customer, however many keys are
+handed out inside it. A key can still carry its own cap; whichever runs out
+first stops that key, and the error says which one it was.
+
+```js
+const team = await client.createBudget("Mobile team", 200);
+
+await client.createKey({ name: "Alice", budgetPoolId: team.id });
+await client.createKey({ name: "Bob", budgetPoolId: team.id, spendLimitUsd: 50 });
+
+for (const pool of await client.listBudgets()) {
+  console.log(pool.name, pool.spent_usd, "of", pool.spend_limit_usd);
+}
+
+await client.resetBudget(team.id);    // new month, same keys
+await client.deleteBudget(team.id);   // keys keep working on their own caps
+```
+
+Resetting refunds nothing: that money already left the account balance. The
+reset clears only the counter the limit is measured against.
+
+### Webhooks
+
+```js
+const hook = await client.createWebhook(
+  "https://your-app.example.com/hooks/silkllm",
+  ["key.threshold_reached", "key.limit_reached", "pool.limit_reached"],
+);
+console.log(hook.secret);   // shown once, never again
+
+// Waits for the delivery and reports what your endpoint answered, so you can
+// check your signature verification before a real limit is reached.
+console.log(await client.testWebhook(hook.id));
+```
+
+Events: `key.threshold_reached`, `key.limit_reached`, `pool.threshold_reached`,
+`pool.limit_reached`, `key.revoked`. Fetch the live list with
+`client.webhookEvents()`.
+
+Deliveries never block a generation, so a slow endpoint of yours cannot slow
+down your own API calls. A hook that fails ten times in a row is switched off
+and shown as disabled, rather than costing every request a timeout.
+
+### Verifying a delivery
+
+Every request carries `X-Silk-Signature` as `sha256=<hex>`, an HMAC-SHA256 of
+the exact bytes sent, keyed with the secret above.
+
+```js
+import { verifyWebhook } from "silkllm";
+
+app.post("/hooks/silkllm", express.raw({ type: "*/*" }), async (req, res) => {
+  // The raw body. Re-serialising a parsed object changes key order and spacing,
+  // and the signature is over the exact bytes that were sent.
+  const ok = await verifyWebhook(SECRET, req.body, req.header("X-Silk-Signature"));
+  if (!ok) return res.sendStatus(401);
+
+  const event = JSON.parse(req.body.toString());
+  if (event.event === "key.limit_reached") pageTheOnCall(event.data);
+  res.sendStatus(200);
+});
+```
+
+The comparison runs in constant time, so a rejection does not leak how much of a
+forged signature was correct.
+
+### Reacting to each limit
+
+```js
+import {
+  KeyLimitExceeded, PoolLimitExceeded, KeyScopeError,
+  KeyRateLimited, InsufficientBalanceError,
+} from "silkllm";
+
+try {
+  await client.generate({ messages: [{ role: "user", content: "Hello" }] });
+} catch (e) {
+  if (e instanceof KeyLimitExceeded) raiseLimit(e.details.limit, e.details.spent);
+  else if (e instanceof PoolLimitExceeded) notifyTeam(e.details.pool_name);
+  else if (e instanceof KeyScopeError) log(`this key may not call ${e.details.model}`);
+  else if (e instanceof KeyRateLimited) await sleep(e.details.retry_after * 1000);
+  else if (e instanceof InsufficientBalanceError) await topUp();  // the account, not the key
+  else throw e;
+}
+```
+
+### Exporting a key's history
+
+```js
+await fs.writeFile("audit.csv", await client.exportKeyUsage(key.id));
+await fs.writeFile("audit.json", await client.exportKeyUsage(key.id, "json"));
+```
+
+Refused attempts are included, which is the part that matters when a deployment
+suddenly stops working.
 
 ---
 

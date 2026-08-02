@@ -5,8 +5,8 @@ Pydantic-based response models for the SilkLLM Python SDK.
 
 # File: silkllm-sdks/packages/python/silkllm/types.py
 
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from dataclasses import dataclass, fields, field
+from typing import Any, Dict, List, Optional, Union
 
 
 @dataclass
@@ -224,8 +224,8 @@ class ApiKey:
     """
     id: str
     name: str
-    created_at: str
-    is_active: bool
+    created_at: str = ""
+    is_active: bool = True
     spent_usd: float = 0.0
     spend_limit_usd: Optional[float] = None
     #: Budget left, or None when the key is uncapped.
@@ -234,8 +234,32 @@ class ApiKey:
     is_exhausted: bool = False
     last_used: Optional[str] = None
     limit_reset_at: Optional[str] = None
+    #: Notify once the key passes this share of its cap. None for no alert.
+    alert_at_percent: Optional[int] = None
+    #: Model ids this key may use. None means every model.
+    allowed_models: Optional[List[str]] = None
+    #: Provider ids this key may use. None means every provider.
+    allowed_providers: Optional[List[str]] = None
+    #: Requests-per-minute ceiling for this key alone. None means no ceiling.
+    rate_limit_per_min: Optional[int] = None
+    #: The shared budget this key draws on, if any.
+    budget_pool_id: Optional[str] = None
     #: Only present in the response that creates the key. Never retrievable again.
     key: Optional[str] = None
+
+    @classmethod
+    def from_api(cls, data: Dict[str, Any]) -> "ApiKey":
+        """
+        Build a key from any response shape the API produces.
+
+        Two things go wrong without this. The create endpoint answers with a
+        narrower object than the list endpoint, so required fields are simply
+        absent and the constructor raises. And a newer backend sends fields this
+        version has never heard of, which would raise just as loudly. Neither is
+        a reason to fail a caller who only wanted the key.
+        """
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
 
 
 @dataclass

@@ -17,8 +17,8 @@ from silkllm.types import (
     ApiKey, KeyUsage,
 )
 from silkllm.exceptions import (
-    SilkLLMError, AuthenticationError, InsufficientBalanceError,
-    ModelNotFoundError, RateLimitError, ProviderError
+    ERROR_CODES, SilkLLMError, AuthenticationError, InsufficientBalanceError,
+    ModelNotFoundError, RateLimitError, ProviderError,
 )
 from silkllm.endpoint import resolve_base_url
 
@@ -311,52 +311,120 @@ class Client:
     # cap, that key refuses requests with HTTP 402 and the code
     # `key_limit_exceeded`, while the rest of the account carries on.
 
-    def create_key(self, name: str, spend_limit_usd: Optional[float] = None) -> ApiKey:
+    def create_key(
+        self,
+        name: str,
+        spend_limit_usd: Optional[float] = None,
+        alert_at_percent: Optional[int] = None,
+        allowed_models: Optional[List[str]] = None,
+        allowed_providers: Optional[List[str]] = None,
+        rate_limit_per_min: Optional[int] = None,
+        budget_pool_id: Optional[str] = None,
+    ) -> ApiKey:
         """
-        Create an API key, optionally capped.
+        Create an API key, optionally with limits on what it may do.
 
         The plaintext key is on the returned object as `.key` and is never
         retrievable again, so store it now.
 
-            key = client.create_key("CI pipeline", spend_limit_usd=5.0)
+            key = client.create_key(
+                "CI pipeline",
+                spend_limit_usd=5.0,
+                alert_at_percent=80,
+                allowed_models=["gpt-4o-mini"],
+                rate_limit_per_min=30,
+            )
             print(key.key)   # the only time you will see this
+
+        Every limit is optional, and a key created without any behaves exactly
+        as keys always have.
 
         Args:
             name: Label for the key, so you know which one to revoke later.
             spend_limit_usd: Cap on how much of your balance this key may spend.
-                             Omit for an uncapped key.
+                Reaching it raises KeyLimitExceeded (HTTP 402).
+            alert_at_percent: Notify once the key passes this share of its cap,
+                e.g. 80. Needs a cap to mean anything.
+            allowed_models: Restrict the key to these model ids. Anything else
+                raises KeyScopeError (HTTP 403).
+            allowed_providers: The same restriction, by provider.
+            rate_limit_per_min: Requests-per-minute ceiling for this key alone.
+                Exceeding it raises KeyRateLimited (HTTP 429).
+            budget_pool_id: Draw on a shared budget as well as this key's own
+                cap. Exhausting it raises PoolLimitExceeded (HTTP 402).
         """
-        payload = {"name": name, "spend_limit_usd": spend_limit_usd}
-        return ApiKey(**self._request("POST", "/api/keys", json=payload))
+        payload: Dict[str, Any] = {"name": name}
+        for field, value in (
+            ("spend_limit_usd", spend_limit_usd),
+            ("alert_at_percent", alert_at_percent),
+            ("allowed_models", allowed_models),
+            ("allowed_providers", allowed_providers),
+            ("rate_limit_per_min", rate_limit_per_min),
+            ("budget_pool_id", budget_pool_id),
+        ):
+            # Only send what was asked for. The API rejects unknown fields, and
+            # sending explicit nulls would be indistinguishable from "no limit"
+            # on an endpoint where that distinction matters.
+            if value is not None:
+                payload[field] = value
+        return ApiKey.from_api(self._request("POST", "/api/keys", json=payload))
 
     def list_keys(self) -> List[ApiKey]:
         """List your API keys, each with its cap, spend and remaining budget."""
-        return [ApiKey(**k) for k in self._request("GET", "/api/keys")]
+        return [ApiKey.from_api(k) for k in self._request("GET", "/api/keys")]
 
     def update_key(
         self,
         key_id: str,
         name: Optional[str] = None,
         spend_limit_usd: Optional[float] = None,
-        clear_spend_limit: bool = False,
+        alert_at_percent: Optional[int] = None,
+        allowed_models: Optional[List[str]] = None,
+        allowed_providers: Optional[List[str]] = None,
+        rate_limit_per_min: Optional[int] = None,
+        budget_pool_id: Optional[str] = None,
         is_active: Optional[bool] = None,
+        clear_spend_limit: bool = False,
+        clear_alert: bool = False,
+        clear_scope: bool = False,
+        clear_rate_limit: bool = False,
+        clear_budget_pool: bool = False,
     ) -> ApiKey:
         """
-        Rename a key, change its cap, or disable it.
+        Rename a key, change any of its limits, or disable it.
 
         Raising the cap on an exhausted key makes it work again immediately
-        without clearing what it has already spent. Pass clear_spend_limit=True
-        to remove the cap entirely; a None spend_limit_usd means "leave it as
-        it is", which is why removal needs its own flag.
+        without clearing what it has already spent.
+
+        Removing a limit needs its own flag. A None argument means "leave this
+        as it is", so without the flags a call that only renamed a key would be
+        unable to ever take a limit off:
+
+            client.update_key(key.id, clear_rate_limit=True)
         """
-        payload: Dict[str, Any] = {"clear_spend_limit": clear_spend_limit}
-        if name is not None:
-            payload["name"] = name
-        if spend_limit_usd is not None:
-            payload["spend_limit_usd"] = spend_limit_usd
-        if is_active is not None:
-            payload["is_active"] = is_active
-        return ApiKey(**self._request("PATCH", f"/api/keys/{key_id}", json=payload))
+        payload: Dict[str, Any] = {}
+        for field, value in (
+            ("name", name),
+            ("spend_limit_usd", spend_limit_usd),
+            ("alert_at_percent", alert_at_percent),
+            ("allowed_models", allowed_models),
+            ("allowed_providers", allowed_providers),
+            ("rate_limit_per_min", rate_limit_per_min),
+            ("budget_pool_id", budget_pool_id),
+            ("is_active", is_active),
+        ):
+            if value is not None:
+                payload[field] = value
+        for flag, on in (
+            ("clear_spend_limit", clear_spend_limit),
+            ("clear_alert", clear_alert),
+            ("clear_scope", clear_scope),
+            ("clear_rate_limit", clear_rate_limit),
+            ("clear_budget_pool", clear_budget_pool),
+        ):
+            if on:
+                payload[flag] = True
+        return ApiKey.from_api(self._request("PATCH", f"/api/keys/{key_id}", json=payload))
 
     def revoke_key(self, key_id: str) -> None:
         """
@@ -396,12 +464,119 @@ class Client:
         """
         response = self._request("POST", f"/api/keys/{key_id}/reset")
         # The reset endpoint answers with a summary rather than the full key.
-        return ApiKey(
-            id=response["id"], name=response["name"], created_at="",
-            is_active=True, spent_usd=response["spent_usd"],
-            spend_limit_usd=response.get("spend_limit_usd"),
-            limit_reset_at=response.get("limit_reset_at"),
+        return ApiKey.from_api(response)
+
+
+    def export_key_usage(self, key_id: str, format: str = "csv") -> bytes:
+        """
+        Download a key's full request history for auditing.
+
+        Returns the raw file bytes rather than parsed rows, because the usual
+        destination is a file or a spreadsheet:
+
+            open("audit.csv", "wb").write(client.export_key_usage(key.id))
+
+        Args:
+            format: "csv" or "json".
+        """
+        # Straight through the configured client, which already carries auth.
+        # Not via _request(): the body is a file, not JSON.
+        response = self._client.get(
+            f"/api/keys/{key_id}/usage/export", params={"format": format},
         )
+        self._check_response(response)
+        return response.content
+
+    # ── Shared budgets ─────────────────────────────────────────────────────
+    # A budget several keys draw on together, so a team or an environment has
+    # one ceiling regardless of how many keys are handed out inside it.
+
+    def create_budget(self, name: str, spend_limit_usd: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Create a shared budget.
+
+        Attach keys to it with `create_key(..., budget_pool_id=budget["id"])`.
+        A budget with no limit only groups keys and reports what they spent.
+        """
+        payload: Dict[str, Any] = {"name": name}
+        if spend_limit_usd is not None:
+            payload["spend_limit_usd"] = spend_limit_usd
+        return self._request("POST", "/api/budgets", json=payload)
+
+    def list_budgets(self) -> List[Dict[str, Any]]:
+        """List your shared budgets, each with its limit, spend and key count."""
+        return self._request("GET", "/api/budgets")
+
+    def update_budget(
+        self,
+        budget_id: str,
+        name: Optional[str] = None,
+        spend_limit_usd: Optional[float] = None,
+        clear_spend_limit: bool = False,
+    ) -> Dict[str, Any]:
+        """Rename a shared budget or change its limit. Removal needs the flag."""
+        payload: Dict[str, Any] = {}
+        if name is not None:
+            payload["name"] = name
+        if spend_limit_usd is not None:
+            payload["spend_limit_usd"] = spend_limit_usd
+        if clear_spend_limit:
+            payload["clear_spend_limit"] = True
+        return self._request("PATCH", f"/api/budgets/{budget_id}", json=payload)
+
+    def reset_budget(self, budget_id: str) -> Dict[str, Any]:
+        """
+        Zero a shared budget's counter, giving every key on it room again.
+
+        Refunds nothing: that money already left the account balance.
+        """
+        return self._request("POST", f"/api/budgets/{budget_id}/reset")
+
+    def delete_budget(self, budget_id: str) -> None:
+        """
+        Delete a shared budget.
+
+        Keys attached to it keep working and fall back to their own caps.
+        """
+        self._request("DELETE", f"/api/budgets/{budget_id}")
+
+    # ── Webhooks ───────────────────────────────────────────────────────────
+    # Outbound notifications for limit events, so you hear about a key running
+    # out before a customer does.
+
+    def create_webhook(self, url: str, events: List[str]) -> Dict[str, Any]:
+        """
+        Register an https endpoint for limit events.
+
+        The signing secret is on the returned object as `["secret"]` and is
+        shown exactly once. Store it now; verifying deliveries is impossible
+        without it.
+
+        Args:
+            url: An https endpoint. Plain http is refused.
+            events: Which events to send. See `webhook_events()`.
+        """
+        return self._request("POST", "/api/webhooks", json={"url": url, "events": events})
+
+    def list_webhooks(self) -> List[Dict[str, Any]]:
+        """List your webhooks, with the outcome of the last delivery to each."""
+        return self._request("GET", "/api/webhooks")
+
+    def webhook_events(self) -> List[str]:
+        """The event names a webhook can subscribe to."""
+        return self._request("GET", "/api/webhooks/events")
+
+    def test_webhook(self, webhook_id: str) -> Dict[str, Any]:
+        """
+        Send a signed test delivery, and report what the endpoint answered.
+
+        Useful for checking a signature check before a real limit is reached.
+        """
+        return self._request("POST", f"/api/webhooks/{webhook_id}/test")
+
+    def delete_webhook(self, webhook_id: str) -> None:
+        """Remove a webhook. Deliveries stop and the secret is discarded."""
+        self._request("DELETE", f"/api/webhooks/{webhook_id}")
 
     def deposit_provider_key(
         self,
@@ -463,6 +638,11 @@ class Client:
         try:
             response = self._client.request(method, path, **kwargs)
             self._check_response(response)
+            # DELETE answers 204 with no body at all, and json() on an empty
+            # string raises. Every delete in this client went through here, so
+            # all of them failed on success.
+            if response.status_code == 204 or not response.content:
+                return {}
             return response.json()
         except httpx.TimeoutException:
             raise SilkLLMError("Request timed out. Try again or increase the timeout.")
@@ -492,24 +672,45 @@ class Client:
         if response.status_code < 300:
             return
         try:
-            error = response.json().get("error", {})
-            code    = error.get("code", "unknown")
-            message = error.get("message", "Unknown error")
+            body = response.json()
         except Exception:
-            code, message = "unknown", response.text
+            body = {}
 
-        if response.status_code == 401:
-            raise AuthenticationError(message)
-        elif response.status_code == 402:
-            raise InsufficientBalanceError(message)
-        elif response.status_code == 404:
-            raise ModelNotFoundError(message)
-        elif response.status_code == 429:
-            raise RateLimitError(message)
-        elif response.status_code == 502:
-            raise ProviderError(message)
+        error = body.get("error") if isinstance(body, dict) else None
+        if isinstance(error, dict):
+            code = error.get("code", "unknown")
+            message = error.get("message") or "Unknown error"
+            details = error.get("details") or {}
         else:
-            raise SilkLLMError(f"[{code}] {message}")
+            # Not every failure comes through the gateway's own handler. A plain
+            # FastAPI HTTPException answers with {"detail": ...}, and throwing
+            # that away leaves the caller holding "Unknown error" when the real
+            # reason was sitting right there in the body.
+            code, details = "unknown", {}
+            detail = body.get("detail") if isinstance(body, dict) else None
+            if isinstance(detail, list):          # a validation error
+                code = "validation_error"
+                detail = "; ".join(
+                    f"{'.'.join(str(p) for p in d.get('loc', [])[1:])}: {d.get('msg', '')}"
+                    for d in detail if isinstance(d, dict)
+                )
+            message = detail or (response.text or "Unknown error")[:500]
+
+        kw = {"code": code, "status_code": response.status_code, "details": details}
+
+        # The code is checked before the status, because several distinct
+        # situations share one. A spent key and an empty account are both 402,
+        # and they need completely different responses from the caller.
+        specific = ERROR_CODES.get(code)
+        if specific is not None:
+            raise specific(message, **kw)
+
+        by_status = {
+            401: AuthenticationError, 402: InsufficientBalanceError,
+            403: SilkLLMError, 404: ModelNotFoundError,
+            429: RateLimitError, 502: ProviderError,
+        }
+        raise by_status.get(response.status_code, SilkLLMError)(message, **kw)
 
     def __enter__(self):
         return self

@@ -195,21 +195,159 @@ distinct from an empty account balance, so you can tell "this key is done" from
 "this account is out of money" and react differently.
 
 ```python
-from silkllm import InsufficientBalanceError
+from silkllm import KeyLimitExceeded, InsufficientBalanceError
 
 try:
     client.generate(messages=[{"role": "user", "content": "Hello"}])
-except InsufficientBalanceError as e:
-    if getattr(e, "code", "") == "key_limit_exceeded":
-        ...   # raise the key's limit, or use a different key
-    else:
-        ...   # the account itself needs topping up
+except KeyLimitExceeded as e:
+    # The figures are on the exception, so nothing has to parse the message.
+    raise_the_limit(e.details["limit"], e.details["spent"])
+except InsufficientBalanceError:
+    top_up()   # the account itself, not this key
 ```
+
+Every error carries `.code`, `.status_code` and `.details`.
 
 Requests are refused before any provider is contacted, so a key at its limit
 costs nothing when it is blocked. The pre-flight check uses an estimate, so the
 request that crosses the line can finish very slightly over, exactly as the
 account balance can.
+
+---
+
+---
+
+## Key controls
+
+A spend limit answers "how much". These answer the rest: what a key may call,
+how fast, whose budget it shares, and how you hear about it before a customer
+does. Every control is optional, and a key created without them behaves exactly
+as keys always have.
+
+| Control | What it does | Refused with |
+|---|---|---|
+| `spend_limit_usd` | Caps total spend on this key | `402 key_limit_exceeded` |
+| `alert_at_percent` | Notifies you at this share of the cap | nothing, it warns |
+| `allowed_models` | Restricts the key to named models | `403 key_scope_denied` |
+| `allowed_providers` | The same, by provider | `403 key_scope_denied` |
+| `rate_limit_per_min` | Caps requests per minute for this key alone | `429 key_rate_limited` |
+| `budget_pool_id` | Draws on a shared budget too | `402 pool_limit_exceeded` |
+
+```python
+key = client.create_key(
+    "CI pipeline",
+    spend_limit_usd=5.0,        # stops at $5 of spend
+    alert_at_percent=80,        # warn me at $4
+    allowed_models=["gpt-4o-mini"],
+    rate_limit_per_min=30,      # a runaway loop is slowed, not funded
+)
+
+# Taking a control off needs its own flag, for the same reason clearing a spend
+# limit does: an omitted field means "leave this as it is".
+client.update_key(key.id, clear_rate_limit=True, clear_scope=True)
+```
+
+Checks run in this order before any provider is contacted: rate limit, scope,
+shared budget, the key's own cap, then the account balance. A key that is out of
+budget therefore costs nothing when it is refused, and the error names the first
+thing that actually stopped it.
+
+### Shared budgets
+
+One ceiling for a team, an environment or a customer, however many keys are
+handed out inside it. A key can still carry its own cap; whichever runs out
+first stops that key, and the error says which one it was.
+
+```python
+team = client.create_budget("Mobile team", spend_limit_usd=200)
+
+client.create_key("Alice", budget_pool_id=team["id"])
+client.create_key("Bob", budget_pool_id=team["id"], spend_limit_usd=50)
+
+for pool in client.list_budgets():
+    print(pool["name"], pool["spent_usd"], "of", pool["spend_limit_usd"])
+
+client.reset_budget(team["id"])    # new month, same keys
+client.delete_budget(team["id"])   # keys keep working on their own caps
+```
+
+Resetting refunds nothing: that money already left the account balance. The
+reset clears only the counter the limit is measured against.
+
+### Webhooks
+
+```python
+hook = client.create_webhook(
+    "https://your-app.example.com/hooks/silkllm",
+    events=["key.threshold_reached", "key.limit_reached", "pool.limit_reached"],
+)
+print(hook["secret"])   # shown once, never again
+
+# Waits for the delivery and reports what your endpoint answered, so you can
+# check your signature verification before a real limit is reached.
+print(client.test_webhook(hook["id"]))
+```
+
+Events: `key.threshold_reached`, `key.limit_reached`, `pool.threshold_reached`,
+`pool.limit_reached`, `key.revoked`. Fetch the live list with
+`client.webhook_events()`.
+
+Deliveries never block a generation, so a slow endpoint of yours cannot slow
+down your own API calls. A hook that fails ten times in a row is switched off
+and shown as disabled, rather than costing every request a timeout.
+
+### Verifying a delivery
+
+Every request carries `X-Silk-Signature` as `sha256=<hex>`, an HMAC-SHA256 of
+the exact bytes sent, keyed with the secret above.
+
+```python
+from silkllm import verify_webhook
+
+@app.post("/hooks/silkllm")
+async def receive(request):
+    body = await request.body()          # the raw bytes, not a parsed dict
+    if not verify_webhook(SECRET, body, request.headers.get("X-Silk-Signature")):
+        return Response(status_code=401)
+    event = json.loads(body)
+    if event["event"] == "key.limit_reached":
+        page_the_on_call(event["data"])
+```
+
+Sign the raw body. Parsing JSON and dumping it again changes key order and
+spacing, and the signature is over the bytes that were actually sent.
+
+### Reacting to each limit
+
+```python
+from silkllm import (
+    KeyLimitExceeded, PoolLimitExceeded, KeyScopeError,
+    KeyRateLimited, InsufficientBalanceError,
+)
+
+try:
+    client.generate(messages=[{"role": "user", "content": "Hello"}])
+except KeyLimitExceeded as e:
+    raise_limit(e.details["limit"], e.details["spent"])
+except PoolLimitExceeded as e:
+    notify_team(e.details["pool_name"])
+except KeyScopeError as e:
+    log(f"this key may not call {e.details['model']}")
+except KeyRateLimited as e:
+    sleep(e.details["retry_after"])
+except InsufficientBalanceError:
+    top_up()          # the account, not the key
+```
+
+### Exporting a key's history
+
+```python
+open("audit.csv", "wb").write(client.export_key_usage(key.id))
+open("audit.json", "wb").write(client.export_key_usage(key.id, format="json"))
+```
+
+Refused attempts are included, which is the part that matters when a deployment
+suddenly stops working.
 
 ---
 

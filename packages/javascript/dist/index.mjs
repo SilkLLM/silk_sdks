@@ -21,12 +21,16 @@ function toBlob(input, contentType = "audio/mpeg") {
   return new Blob([input], { type: contentType });
 }
 var SilkLLMError = class extends Error {
-  constructor(code, message) {
+  constructor(code, message, statusCode, details = {}) {
     super(message);
     this.code = code;
-    this.name = "SilkLLMError";
+    this.statusCode = statusCode;
+    this.details = details;
+    this.name = new.target.name;
   }
   code;
+  statusCode;
+  details;
 };
 var AuthenticationError = class extends SilkLLMError {
 };
@@ -38,6 +42,31 @@ var RateLimitError = class extends SilkLLMError {
 };
 var ProviderError = class extends SilkLLMError {
 };
+var KeyLimitExceeded = class extends SilkLLMError {
+};
+var PoolLimitExceeded = class extends SilkLLMError {
+};
+var KeyScopeError = class extends SilkLLMError {
+};
+var KeyRateLimited = class extends SilkLLMError {
+};
+var ERROR_CODES = {
+  key_limit_exceeded: KeyLimitExceeded,
+  pool_limit_exceeded: PoolLimitExceeded,
+  key_scope_denied: KeyScopeError,
+  key_rate_limited: KeyRateLimited,
+  insufficient_balance: InsufficientBalanceError
+};
+function controlsToBody(c) {
+  const body = {};
+  if (c.spendLimitUsd !== void 0) body.spend_limit_usd = c.spendLimitUsd;
+  if (c.alertAtPercent !== void 0) body.alert_at_percent = c.alertAtPercent;
+  if (c.allowedModels !== void 0) body.allowed_models = c.allowedModels;
+  if (c.allowedProviders !== void 0) body.allowed_providers = c.allowedProviders;
+  if (c.rateLimitPerMin !== void 0) body.rate_limit_per_min = c.rateLimitPerMin;
+  if (c.budgetPoolId !== void 0) body.budget_pool_id = c.budgetPoolId;
+  return body;
+}
 var SilkLLM = class {
   apiKey;
   baseUrl;
@@ -177,7 +206,7 @@ var SilkLLM = class {
   async createKey(options) {
     return this._request("POST", "/api/keys", {
       name: options.name,
-      spend_limit_usd: options.spendLimitUsd ?? null
+      ...controlsToBody(options)
     });
   }
   /** List your API keys, each with its cap, spend and remaining budget. */
@@ -193,10 +222,14 @@ var SilkLLM = class {
    * removal needs its own flag.
    */
   async updateKey(keyId, changes) {
-    const body = { clear_spend_limit: changes.clearSpendLimit ?? false };
+    const body = controlsToBody(changes);
     if (changes.name !== void 0) body.name = changes.name;
-    if (changes.spendLimitUsd !== void 0) body.spend_limit_usd = changes.spendLimitUsd;
     if (changes.isActive !== void 0) body.is_active = changes.isActive;
+    if (changes.clearSpendLimit) body.clear_spend_limit = true;
+    if (changes.clearAlert) body.clear_alert = true;
+    if (changes.clearScope) body.clear_scope = true;
+    if (changes.clearRateLimit) body.clear_rate_limit = true;
+    if (changes.clearBudgetPool) body.clear_budget_pool = true;
     return this._request("PATCH", `/api/keys/${keyId}`, body);
   }
   /** Revoke a key. It stops authenticating at once; its history is kept. */
@@ -225,6 +258,94 @@ var SilkLLM = class {
    */
   async resetKeyUsage(keyId) {
     return this._request("POST", `/api/keys/${keyId}/reset`);
+  }
+  /**
+   * Download a key's full request history for auditing.
+   *
+   * Returns the raw text rather than parsed rows, because the usual destination
+   * is a file or a spreadsheet.
+   */
+  async exportKeyUsage(keyId, format = "csv") {
+    const response = await fetch(
+      `${this.baseUrl}/api/keys/${keyId}/usage/export?format=${format}`,
+      { headers: this._headers() }
+    );
+    if (!response.ok) await this._handleError(response);
+    return response.text();
+  }
+  // ── Shared budgets ──────────────────────────────────────────────────────
+  // A budget several keys draw on together, so a team or an environment has one
+  // ceiling regardless of how many keys are handed out inside it.
+  /**
+   * Create a shared budget.
+   *
+   * Attach keys with `createKey({ name, budgetPoolId: budget.id })`. A budget
+   * with no limit only groups keys and reports what they spent.
+   */
+  async createBudget(name, spendLimitUsd) {
+    return this._request("POST", "/api/budgets", {
+      name,
+      ...spendLimitUsd !== void 0 ? { spend_limit_usd: spendLimitUsd } : {}
+    });
+  }
+  /** List your shared budgets, each with its limit, spend and key count. */
+  async listBudgets() {
+    return this._request("GET", "/api/budgets");
+  }
+  /** Rename a shared budget or change its limit. Removal needs the flag. */
+  async updateBudget(budgetId, changes) {
+    const body = {};
+    if (changes.name !== void 0) body.name = changes.name;
+    if (changes.spendLimitUsd !== void 0) body.spend_limit_usd = changes.spendLimitUsd;
+    if (changes.clearSpendLimit) body.clear_spend_limit = true;
+    return this._request("PATCH", `/api/budgets/${budgetId}`, body);
+  }
+  /**
+   * Zero a shared budget's counter, giving every key on it room again.
+   *
+   * Refunds nothing: that money already left the account balance.
+   */
+  async resetBudget(budgetId) {
+    return this._request("POST", `/api/budgets/${budgetId}/reset`);
+  }
+  /**
+   * Delete a shared budget.
+   *
+   * Keys attached to it keep working and fall back to their own caps.
+   */
+  async deleteBudget(budgetId) {
+    await this._request("DELETE", `/api/budgets/${budgetId}`);
+  }
+  // ── Webhooks ────────────────────────────────────────────────────────────
+  /**
+   * Register an https endpoint for limit events.
+   *
+   * The signing secret is on `.secret` of the result and is shown exactly once.
+   * Store it now; verifying deliveries is impossible without it.
+   */
+  async createWebhook(url, events) {
+    return this._request("POST", "/api/webhooks", { url, events });
+  }
+  /** List your webhooks, with the outcome of the last delivery to each. */
+  async listWebhooks() {
+    return this._request("GET", "/api/webhooks");
+  }
+  /** The event names a webhook can subscribe to. */
+  async webhookEvents() {
+    return this._request("GET", "/api/webhooks/events");
+  }
+  /**
+   * Send a signed test delivery and report what the endpoint answered.
+   *
+   * Waits for the delivery rather than queueing it, so the result tells you
+   * whether your signature check works before a real limit is reached.
+   */
+  async testWebhook(webhookId) {
+    return this._request("POST", `/api/webhooks/${webhookId}/test`);
+  }
+  /** Remove a webhook. Deliveries stop and the secret is discarded. */
+  async deleteWebhook(webhookId) {
+    await this._request("DELETE", `/api/webhooks/${webhookId}`);
   }
   async depositProviderKey(options) {
     const body = {
@@ -269,7 +390,9 @@ var SilkLLM = class {
       body: body ? JSON.stringify(body) : void 0
     });
     if (!response.ok) await this._handleError(response);
-    return response.json();
+    if (response.status === 204) return {};
+    const text = await response.text();
+    return text ? JSON.parse(text) : {};
   }
   /** Multipart request (file uploads). No Content-Type header: fetch sets the boundary. */
   async _requestForm(method, path, form) {
@@ -282,33 +405,90 @@ var SilkLLM = class {
     return response.json();
   }
   async _handleError(response) {
-    let detail = "Unknown error";
+    let data = {};
     try {
-      const data = await response.json();
-      detail = data.detail || data.message || JSON.stringify(data);
+      data = await response.json();
     } catch {
     }
+    const error = data && typeof data.error === "object" ? data.error : null;
+    let code = "unknown";
+    let message = "Unknown error";
+    let details = {};
+    if (error) {
+      code = error.code ?? "unknown";
+      message = error.message ?? message;
+      details = error.details ?? {};
+    } else if (Array.isArray(data == null ? void 0 : data.detail)) {
+      code = "validation_error";
+      message = data.detail.map((d) => `${(d.loc ?? []).slice(1).join(".")}: ${d.msg ?? ""}`).join("; ");
+    } else if (typeof (data == null ? void 0 : data.detail) === "string") {
+      message = data.detail;
+    } else if (data && Object.keys(data).length) {
+      message = JSON.stringify(data);
+    }
     const status = response.status;
-    if (status === 401) throw new AuthenticationError("auth_error", detail);
-    if (status === 402) throw new InsufficientBalanceError("insufficient_balance", detail);
-    if (status === 404) throw new ModelNotFoundError("model_not_found", detail);
-    if (status === 429) throw new RateLimitError("rate_limit", detail);
-    if (status === 502) throw new ProviderError("provider_error", detail);
-    throw new SilkLLMError("unknown", detail);
+    const Specific = ERROR_CODES[code];
+    if (Specific) throw new Specific(code, message, status, details);
+    const byStatus = {
+      401: AuthenticationError,
+      402: InsufficientBalanceError,
+      404: ModelNotFoundError,
+      429: RateLimitError,
+      502: ProviderError
+    };
+    const Cls = byStatus[status] ?? SilkLLMError;
+    throw new Cls(code, message, status, details);
   }
 };
+
+// src/webhooks.ts
+var SIGNATURE_HEADER = "X-Silk-Signature";
+var TIMESTAMP_HEADER = "X-Silk-Timestamp";
+function toBytes(body) {
+  if (typeof body === "string") return new TextEncoder().encode(body);
+  if (body instanceof Uint8Array) return body;
+  return new Uint8Array(body);
+}
+async function sign(secret, body) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, toBytes(body));
+  const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `sha256=${hex}`;
+}
+async function verifyWebhook(secret, body, signature) {
+  if (!secret || !signature) return false;
+  const expected = await sign(secret, body);
+  if (expected.length !== signature.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+  return diff === 0;
+}
 export {
   AuthenticationError,
   DEFAULT_BASE_URL,
   InsufficientBalanceError,
+  KeyLimitExceeded,
+  KeyRateLimited,
+  KeyScopeError,
   ModelNotFoundError,
+  PoolLimitExceeded,
   ProviderError,
   RateLimitError,
+  SIGNATURE_HEADER,
   SilkLLM,
   SilkLLMError,
+  TIMESTAMP_HEADER,
   audioPart,
   SilkLLM as default,
   imagePart,
   resolveBaseUrl,
-  textPart
+  sign,
+  textPart,
+  verifyWebhook
 };

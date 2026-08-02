@@ -12,7 +12,8 @@ import type {
   UpdateProviderKeyOptions, TrialStatus,
   ImageResult, AudioResult, VideoResult, ImageOptions, AudioOptions, VideoOptions,
   VoicesResponse, ContentPart, SpeechToSpeechOptions, CloneVoiceOptions, CloneVoiceResult, AudioInput,
-  ApiKey, KeyUsage, CreateKeyOptions, UpdateKeyOptions,
+  ApiKey, KeyUsage, CreateKeyOptions, UpdateKeyOptions, KeyControls,
+  BudgetPool, Webhook,
 } from "./types";
 import { resolveBaseUrl } from "./endpoint";
 
@@ -32,10 +33,23 @@ function toBlob(input: AudioInput, contentType = "audio/mpeg"): Blob {
   return new Blob([input as BlobPart], { type: contentType });
 }
 
+/**
+ * Base error for everything this client throws.
+ *
+ * `code` is the part worth branching on. Several distinct situations share one
+ * HTTP status, and telling them apart is the difference between raising a key's
+ * limit and topping the account up.
+ */
 export class SilkLLMError extends Error {
-  constructor(public code: string, message: string) {
+  constructor(
+    public code: string,
+    message: string,
+    public statusCode?: number,
+    /** The numbers behind the message, so nobody has to parse the sentence. */
+    public details: Record<string, any> = {},
+  ) {
     super(message);
-    this.name = "SilkLLMError";
+    this.name = new.target.name;
   }
 }
 export class AuthenticationError extends SilkLLMError {}
@@ -43,6 +57,42 @@ export class InsufficientBalanceError extends SilkLLMError {}
 export class ModelNotFoundError extends SilkLLMError {}
 export class RateLimitError extends SilkLLMError {}
 export class ProviderError extends SilkLLMError {}
+
+/** The key making the request has reached its own spend limit. */
+export class KeyLimitExceeded extends SilkLLMError {}
+/** The shared budget this key draws on has been used up. */
+export class PoolLimitExceeded extends SilkLLMError {}
+/** The key is not allowed to use the model or provider requested. */
+export class KeyScopeError extends SilkLLMError {}
+/** The key exceeded its own requests-per-minute ceiling. Clears on its own. */
+export class KeyRateLimited extends SilkLLMError {}
+
+/** Error codes the API sends, mapped to the class thrown for them. */
+const ERROR_CODES: Record<string, typeof SilkLLMError> = {
+  key_limit_exceeded: KeyLimitExceeded,
+  pool_limit_exceeded: PoolLimitExceeded,
+  key_scope_denied: KeyScopeError,
+  key_rate_limited: KeyRateLimited,
+  insufficient_balance: InsufficientBalanceError,
+};
+
+/**
+ * Translate the camelCase control options into the API's snake_case body.
+ *
+ * Only what was set is sent. The API rejects unknown fields, and an explicit
+ * null would be indistinguishable from "no limit" on endpoints where that
+ * distinction decides whether spending stops.
+ */
+function controlsToBody(c: KeyControls): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (c.spendLimitUsd !== undefined) body.spend_limit_usd = c.spendLimitUsd;
+  if (c.alertAtPercent !== undefined) body.alert_at_percent = c.alertAtPercent;
+  if (c.allowedModels !== undefined) body.allowed_models = c.allowedModels;
+  if (c.allowedProviders !== undefined) body.allowed_providers = c.allowedProviders;
+  if (c.rateLimitPerMin !== undefined) body.rate_limit_per_min = c.rateLimitPerMin;
+  if (c.budgetPoolId !== undefined) body.budget_pool_id = c.budgetPoolId;
+  return body;
+}
 
 export class SilkLLM {
   private apiKey: string;
@@ -201,7 +251,7 @@ export class SilkLLM {
   async createKey(options: CreateKeyOptions): Promise<ApiKey> {
     return this._request("POST", "/api/keys", {
       name: options.name,
-      spend_limit_usd: options.spendLimitUsd ?? null,
+      ...controlsToBody(options),
     }) as Promise<ApiKey>;
   }
 
@@ -219,10 +269,16 @@ export class SilkLLM {
    * removal needs its own flag.
    */
   async updateKey(keyId: string, changes: UpdateKeyOptions): Promise<ApiKey> {
-    const body: Record<string, unknown> = { clear_spend_limit: changes.clearSpendLimit ?? false };
+    const body: Record<string, unknown> = controlsToBody(changes);
     if (changes.name !== undefined) body.name = changes.name;
-    if (changes.spendLimitUsd !== undefined) body.spend_limit_usd = changes.spendLimitUsd;
     if (changes.isActive !== undefined) body.is_active = changes.isActive;
+    // Only send the flags that were actually asked for. Sending them all as
+    // false is harmless today but makes the request lie about its intent.
+    if (changes.clearSpendLimit) body.clear_spend_limit = true;
+    if (changes.clearAlert) body.clear_alert = true;
+    if (changes.clearScope) body.clear_scope = true;
+    if (changes.clearRateLimit) body.clear_rate_limit = true;
+    if (changes.clearBudgetPool) body.clear_budget_pool = true;
     return this._request("PATCH", `/api/keys/${keyId}`, body) as Promise<ApiKey>;
   }
 
@@ -257,6 +313,112 @@ export class SilkLLM {
    */
   async resetKeyUsage(keyId: string): Promise<{ id: string; name: string; spent_usd: number; message: string }> {
     return this._request("POST", `/api/keys/${keyId}/reset`) as Promise<any>;
+  }
+
+
+  /**
+   * Download a key's full request history for auditing.
+   *
+   * Returns the raw text rather than parsed rows, because the usual destination
+   * is a file or a spreadsheet.
+   */
+  async exportKeyUsage(keyId: string, format: "csv" | "json" = "csv"): Promise<string> {
+    const response = await fetch(
+      `${this.baseUrl}/api/keys/${keyId}/usage/export?format=${format}`,
+      { headers: this._headers() },
+    );
+    if (!response.ok) await this._handleError(response);
+    return response.text();
+  }
+
+  // ── Shared budgets ──────────────────────────────────────────────────────
+  // A budget several keys draw on together, so a team or an environment has one
+  // ceiling regardless of how many keys are handed out inside it.
+
+  /**
+   * Create a shared budget.
+   *
+   * Attach keys with `createKey({ name, budgetPoolId: budget.id })`. A budget
+   * with no limit only groups keys and reports what they spent.
+   */
+  async createBudget(name: string, spendLimitUsd?: number): Promise<BudgetPool> {
+    return this._request("POST", "/api/budgets", {
+      name, ...(spendLimitUsd !== undefined ? { spend_limit_usd: spendLimitUsd } : {}),
+    }) as Promise<BudgetPool>;
+  }
+
+  /** List your shared budgets, each with its limit, spend and key count. */
+  async listBudgets(): Promise<BudgetPool[]> {
+    return this._request("GET", "/api/budgets") as Promise<BudgetPool[]>;
+  }
+
+  /** Rename a shared budget or change its limit. Removal needs the flag. */
+  async updateBudget(
+    budgetId: string,
+    changes: { name?: string; spendLimitUsd?: number; clearSpendLimit?: boolean },
+  ): Promise<BudgetPool> {
+    const body: Record<string, unknown> = {};
+    if (changes.name !== undefined) body.name = changes.name;
+    if (changes.spendLimitUsd !== undefined) body.spend_limit_usd = changes.spendLimitUsd;
+    if (changes.clearSpendLimit) body.clear_spend_limit = true;
+    return this._request("PATCH", `/api/budgets/${budgetId}`, body) as Promise<BudgetPool>;
+  }
+
+  /**
+   * Zero a shared budget's counter, giving every key on it room again.
+   *
+   * Refunds nothing: that money already left the account balance.
+   */
+  async resetBudget(budgetId: string): Promise<BudgetPool> {
+    return this._request("POST", `/api/budgets/${budgetId}/reset`) as Promise<BudgetPool>;
+  }
+
+  /**
+   * Delete a shared budget.
+   *
+   * Keys attached to it keep working and fall back to their own caps.
+   */
+  async deleteBudget(budgetId: string): Promise<void> {
+    await this._request("DELETE", `/api/budgets/${budgetId}`);
+  }
+
+  // ── Webhooks ────────────────────────────────────────────────────────────
+
+  /**
+   * Register an https endpoint for limit events.
+   *
+   * The signing secret is on `.secret` of the result and is shown exactly once.
+   * Store it now; verifying deliveries is impossible without it.
+   */
+  async createWebhook(url: string, events: string[]): Promise<Webhook> {
+    return this._request("POST", "/api/webhooks", { url, events }) as Promise<Webhook>;
+  }
+
+  /** List your webhooks, with the outcome of the last delivery to each. */
+  async listWebhooks(): Promise<Webhook[]> {
+    return this._request("GET", "/api/webhooks") as Promise<Webhook[]>;
+  }
+
+  /** The event names a webhook can subscribe to. */
+  async webhookEvents(): Promise<string[]> {
+    return this._request("GET", "/api/webhooks/events") as Promise<string[]>;
+  }
+
+  /**
+   * Send a signed test delivery and report what the endpoint answered.
+   *
+   * Waits for the delivery rather than queueing it, so the result tells you
+   * whether your signature check works before a real limit is reached.
+   */
+  async testWebhook(webhookId: string): Promise<{
+    url: string; delivered: boolean; status_code: number | null; error: string | null;
+  }> {
+    return this._request("POST", `/api/webhooks/${webhookId}/test`) as Promise<any>;
+  }
+
+  /** Remove a webhook. Deliveries stop and the secret is discarded. */
+  async deleteWebhook(webhookId: string): Promise<void> {
+    await this._request("DELETE", `/api/webhooks/${webhookId}`);
   }
 
   async depositProviderKey(options: DepositProviderKeyOptions): Promise<ProviderKey> {
@@ -307,7 +469,12 @@ export class SilkLLM {
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!response.ok) await this._handleError(response);
-    return response.json();
+    // DELETE answers 204 with no body, and json() on an empty one rejects.
+    // Every delete in this client went through here, so all of them failed on
+    // success.
+    if (response.status === 204) return {};
+    const text = await response.text();
+    return text ? JSON.parse(text) : {};
   }
 
   /** Multipart request (file uploads). No Content-Type header: fetch sets the boundary. */
@@ -322,18 +489,44 @@ export class SilkLLM {
   }
 
   private async _handleError(response: Response): Promise<never> {
-    let detail = "Unknown error";
-    try {
-      const data = await response.json();
-      detail = data.detail || data.message || JSON.stringify(data);
-    } catch {}
+    let data: any = {};
+    try { data = await response.json(); } catch { /* empty or non-JSON body */ }
+
+    // The gateway answers with {error: {code, message, details}}. Reading only
+    // `detail` and `message` missed that shape entirely and handed the caller a
+    // stringified blob with a code invented from the status.
+    const error = data && typeof data.error === "object" ? data.error : null;
+    let code = "unknown";
+    let message = "Unknown error";
+    let details: Record<string, any> = {};
+
+    if (error) {
+      code = error.code ?? "unknown";
+      message = error.message ?? message;
+      details = error.details ?? {};
+    } else if (Array.isArray(data?.detail)) {
+      // A validation error from FastAPI.
+      code = "validation_error";
+      message = data.detail
+        .map((d: any) => `${(d.loc ?? []).slice(1).join(".")}: ${d.msg ?? ""}`)
+        .join("; ");
+    } else if (typeof data?.detail === "string") {
+      message = data.detail;
+    } else if (data && Object.keys(data).length) {
+      message = JSON.stringify(data);
+    }
+
     const status = response.status;
-    if (status === 401) throw new AuthenticationError("auth_error", detail);
-    if (status === 402) throw new InsufficientBalanceError("insufficient_balance", detail);
-    if (status === 404) throw new ModelNotFoundError("model_not_found", detail);
-    if (status === 429) throw new RateLimitError("rate_limit", detail);
-    if (status === 502) throw new ProviderError("provider_error", detail);
-    throw new SilkLLMError("unknown", detail);
+    // The code decides first: a spent key and an empty account are both 402.
+    const Specific = ERROR_CODES[code];
+    if (Specific) throw new Specific(code, message, status, details);
+
+    const byStatus: Record<number, typeof SilkLLMError> = {
+      401: AuthenticationError, 402: InsufficientBalanceError,
+      404: ModelNotFoundError, 429: RateLimitError, 502: ProviderError,
+    };
+    const Cls = byStatus[status] ?? SilkLLMError;
+    throw new Cls(code, message, status, details);
   }
 }
 
