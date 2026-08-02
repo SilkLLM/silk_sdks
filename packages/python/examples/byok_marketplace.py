@@ -14,7 +14,6 @@ import silkllm
 
 client = silkllm.Client(
     api_key=os.environ.get("SILKLLM_API_KEY", "silk_your_key"),
-    base_url=os.environ.get("SILKLLM_BASE_URL", "https://silkllm.onrender.com"),
 )
 
 # Deposit a public key: SilkLLM may serve other users with it, and you earn

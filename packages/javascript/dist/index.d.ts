@@ -251,8 +251,12 @@ declare class SilkLLM {
     private apiKey;
     private baseUrl;
     /**
+     * You do not configure a server address. The SDK knows where SilkLLM is.
+     *
      * @param options.apiKey   Your silk_ API key (or SILKLLM_API_KEY env var)
-     * @param options.baseUrl  For self-hosted, e.g. "http://localhost:8000" (no trailing slash, no /api)
+     * @param options.baseUrl  Advanced, and normally omitted. Point the SDK at a
+     *                         self-hosted or local backend, e.g. "http://localhost:8000"
+     *                         (no trailing slash, no /api).
      */
     constructor(options?: {
         apiKey?: string;
@@ -307,4 +311,26 @@ declare class SilkLLM {
     private _handleError;
 }
 
-export { type AudioInput, type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type CloneVoiceOptions, type CloneVoiceResult, type ContentPart, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type SpeechToSpeechOptions, type TrialStatus, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, audioPart, SilkLLM as default, imagePart, textPart };
+/**
+ * endpoint.ts
+ * Where the SilkLLM API lives.
+ *
+ * This is the single place the JavaScript SDK records the service address.
+ * Callers are not expected to know or supply it: `new SilkLLM({ apiKey })`
+ * resolves the endpoint on its own, and if the service ever moves, only this
+ * file changes.
+ *
+ * Resolution order:
+ *   1. an explicit baseUrl option    (self-hosted or a private deployment)
+ *   2. the SILKLLM_BASE_URL env var  (staging, local backend, CI)
+ *   3. the managed service           (what nearly everyone uses)
+ */
+/**
+ * The managed SilkLLM service. Note there is no "/api" suffix; the SDK appends
+ * the path segments it needs.
+ */
+declare const DEFAULT_BASE_URL = "https://silkllm-backend.169.58.53.167.nip.io";
+/** Return the base URL to talk to, without a trailing slash. */
+declare function resolveBaseUrl(explicit?: string): string;
+
+export { type AudioInput, type AudioOptions, type AudioResult, AuthenticationError, type BalanceResponse, type CloneVoiceOptions, type CloneVoiceResult, type ContentPart, DEFAULT_BASE_URL, type DepositProviderKeyOptions, type GenerateOptions, type GenerateResponse, type ImageOptions, type ImageResult, InsufficientBalanceError, type Message, ModelNotFoundError, type ModelsResponse, ProviderError, type ProviderKey, RateLimitError, SilkLLM, SilkLLMError, type SpeechToSpeechOptions, type TrialStatus, type UpdateProviderKeyOptions, type UsageResponse, type VideoOptions, type VideoResult, type Voice, type VoiceSettings, type VoicesResponse, audioPart, SilkLLM as default, imagePart, resolveBaseUrl, textPart };

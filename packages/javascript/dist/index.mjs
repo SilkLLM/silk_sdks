@@ -1,3 +1,11 @@
+// src/endpoint.ts
+var DEFAULT_BASE_URL = "https://silkllm-backend.169.58.53.167.nip.io";
+function resolveBaseUrl(explicit) {
+  var _a;
+  const fromEnv = typeof process !== "undefined" ? (_a = process.env) == null ? void 0 : _a.SILKLLM_BASE_URL : void 0;
+  return (explicit || fromEnv || DEFAULT_BASE_URL).replace(/\/$/, "");
+}
+
 // src/client.ts
 function textPart(text) {
   return { type: "text", text };
@@ -34,13 +42,17 @@ var SilkLLM = class {
   apiKey;
   baseUrl;
   /**
+   * You do not configure a server address. The SDK knows where SilkLLM is.
+   *
    * @param options.apiKey   Your silk_ API key (or SILKLLM_API_KEY env var)
-   * @param options.baseUrl  For self-hosted, e.g. "http://localhost:8000" (no trailing slash, no /api)
+   * @param options.baseUrl  Advanced, and normally omitted. Point the SDK at a
+   *                         self-hosted or local backend, e.g. "http://localhost:8000"
+   *                         (no trailing slash, no /api).
    */
   constructor(options = {}) {
     this.apiKey = options.apiKey || (typeof process !== "undefined" ? process.env.SILKLLM_API_KEY || "" : "");
     if (!this.apiKey) throw new AuthenticationError("auth_error", "No API key provided.");
-    this.baseUrl = (options.baseUrl || process.env.SILKLLM_BASE_URL || "https://silkllm.onrender.com").replace(/\/$/, "");
+    this.baseUrl = resolveBaseUrl(options.baseUrl);
   }
   async generate(options) {
     const body = { ...options, stream: false };
@@ -222,6 +234,7 @@ var SilkLLM = class {
 };
 export {
   AuthenticationError,
+  DEFAULT_BASE_URL,
   InsufficientBalanceError,
   ModelNotFoundError,
   ProviderError,
@@ -231,5 +244,6 @@ export {
   audioPart,
   SilkLLM as default,
   imagePart,
+  resolveBaseUrl,
   textPart
 };

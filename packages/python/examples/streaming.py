@@ -11,13 +11,9 @@ Usage:
 
 import silkllm
 
-# For local development, point to your backend and provide your API key.
-# In production, you can omit base_url (defaults to https://api.silkllm.com)
-# and set SILKLLM_API_KEY environment variable.
-client = silkllm.Client(
-    api_key="silk_19aa907700678236ce88d1e0fed3b4d04aabeb597658b0df02cafe4c3012ac54",      # replace with your actual key
-    base_url="https://silkllm.onrender.com"   # local backend
-)
+# The SDK reads SILKLLM_API_KEY from the environment and already knows where
+# SilkLLM is hosted, so there is nothing else to configure.
+client = silkllm.Client()
 
 print("Assistant: ", end="", flush=True)
 

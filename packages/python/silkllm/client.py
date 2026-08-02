@@ -19,6 +19,7 @@ from silkllm.exceptions import (
     SilkLLMError, AuthenticationError, InsufficientBalanceError,
     ModelNotFoundError, RateLimitError, ProviderError
 )
+from silkllm.endpoint import resolve_base_url
 
 
 def _read_bytes(source: Any) -> bytes:
@@ -39,17 +40,19 @@ class Client:
 
     Usage:
         import silkllm
-        client = silkllm.Client(api_key="silk_...", base_url="https://silkllm.onrender.com")
+        client = silkllm.Client(api_key="silk_...")
         response = client.generate(
             messages=[{"role": "user", "content": "Hello!"}]
         )
         print(response.content)
+
+    You do not configure a server address. The SDK knows where SilkLLM is.
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        base_url: str = "https://silkllm.onrender.com",
+        base_url: str = "",
         timeout: float = 60.0,
     ):
         """
@@ -58,8 +61,10 @@ class Client:
         Args:
             api_key: Your SilkLLM API key (starts with silk_).
                      Reads from SILKLLM_API_KEY env var if not provided.
-            base_url: API base URL. DO NOT include '/api' (e.g., "http://localhost:8000").
-                      Defaults to https://silkllm.onrender.com.
+            base_url: Advanced, and normally omitted. Point the SDK at a
+                      self-hosted or local backend, e.g. "http://localhost:8000".
+                      Do not include '/api'. When empty the SDK uses
+                      SILKLLM_BASE_URL if set, otherwise the managed service.
             timeout:  Request timeout in seconds.
         """
         self.api_key = api_key or os.environ.get("SILKLLM_API_KEY")
@@ -67,7 +72,7 @@ class Client:
             raise AuthenticationError(
                 "No API key provided. Pass api_key= or set the SILKLLM_API_KEY env var."
             )
-        self.base_url = base_url.rstrip("/")
+        self.base_url = resolve_base_url(base_url)
         self._client = httpx.Client(
             base_url=self.base_url,
             headers={

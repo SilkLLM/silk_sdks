@@ -13,7 +13,6 @@ import SilkLLM from "silkllm";
 
 const client = new SilkLLM({
   apiKey: process.env.SILKLLM_API_KEY || "silk_your_key",
-  baseUrl: process.env.SILKLLM_BASE_URL || "https://silkllm.onrender.com",
 });
 
 // Free-trial status.

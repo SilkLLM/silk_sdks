@@ -13,6 +13,7 @@ import type {
   ImageResult, AudioResult, VideoResult, ImageOptions, AudioOptions, VideoOptions,
   VoicesResponse, ContentPart, SpeechToSpeechOptions, CloneVoiceOptions, CloneVoiceResult, AudioInput,
 } from "./types";
+import { resolveBaseUrl } from "./endpoint";
 
 // ── Multimodal input helpers ─────────────────────────────────────────────────
 /** A text part for a multimodal message. */
@@ -47,15 +48,19 @@ export class SilkLLM {
   private baseUrl: string;
 
   /**
+   * You do not configure a server address. The SDK knows where SilkLLM is.
+   *
    * @param options.apiKey   Your silk_ API key (or SILKLLM_API_KEY env var)
-   * @param options.baseUrl  For self-hosted, e.g. "http://localhost:8000" (no trailing slash, no /api)
+   * @param options.baseUrl  Advanced, and normally omitted. Point the SDK at a
+   *                         self-hosted or local backend, e.g. "http://localhost:8000"
+   *                         (no trailing slash, no /api).
    */
   constructor(options: { apiKey?: string; baseUrl?: string } = {}) {
     this.apiKey = options.apiKey
       || (typeof process !== "undefined" ? process.env.SILKLLM_API_KEY || "" : "");
     if (!this.apiKey) throw new AuthenticationError("auth_error", "No API key provided.");
 
-    this.baseUrl = (options.baseUrl || process.env.SILKLLM_BASE_URL || "https://silkllm.onrender.com").replace(/\/$/, "");
+    this.baseUrl = resolveBaseUrl(options.baseUrl);
   }
 
   async generate(options: GenerateOptions): Promise<GenerateResponse> {
