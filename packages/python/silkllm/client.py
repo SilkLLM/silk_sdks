@@ -467,6 +467,34 @@ class Client:
         return ApiKey.from_api(response)
 
 
+    def delete_key(self, key_id: str) -> None:
+        """
+        Delete a revoked key and its activity log for good.
+
+        Two steps on purpose. `revoke_key()` stops the key but keeps its history,
+        because a key that stopped and left no trace cannot be investigated. This
+        is the second step, for when the trace is no longer wanted, and it only
+        works on a key that is already revoked.
+
+        The account ledger is untouched: that is the record of money that moved,
+        it belongs to the account rather than the key, and deleting a key must
+        not put a hole in the books.
+        """
+        self._request("DELETE", f"/api/keys/{key_id}/permanent")
+
+    def allocation(self) -> Dict[str, float]:
+        """
+        Balance, how much of it limits already promise, and what is left.
+
+        A spend limit sets aside part of the one account balance for one key, so
+        limits compete: the sum of the unspent parts cannot exceed the balance.
+        Check this before setting one to know what will be accepted.
+
+            free = client.allocation()["available"]
+            client.create_key("CI", spend_limit_usd=min(5.0, free))
+        """
+        return self._request("GET", "/api/keys/allocation")
+
     def export_key_usage(self, key_id: str, format: str = "csv") -> bytes:
         """
         Download a key's full request history for auditing.

@@ -317,6 +317,30 @@ export class SilkLLM {
 
 
   /**
+   * Delete a revoked key and its activity log for good.
+   *
+   * Two steps on purpose. `revokeKey()` stops the key but keeps its history,
+   * because a key that stopped and left no trace cannot be investigated. This is
+   * the second step, and it only works on a key that is already revoked.
+   *
+   * The account ledger is untouched: that is the record of money that moved, and
+   * deleting a key must not put a hole in the books.
+   */
+  async deleteKey(keyId: string): Promise<void> {
+    await this._request("DELETE", `/api/keys/${keyId}/permanent`);
+  }
+
+  /**
+   * Balance, how much of it limits already promise, and what is left.
+   *
+   * A spend limit sets aside part of the one account balance for one key, so
+   * limits compete: the sum of the unspent parts cannot exceed the balance.
+   */
+  async allocation(): Promise<{ balance: number; allocated: number; available: number }> {
+    return this._request("GET", "/api/keys/allocation") as Promise<any>;
+  }
+
+  /**
    * Download a key's full request history for auditing.
    *
    * Returns the raw text rather than parsed rows, because the usual destination

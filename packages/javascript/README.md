@@ -104,9 +104,15 @@ reaches its limit it stops working; every other key on the account carries on.
 This is how you hand a key to a side project, a contractor or a CI pipeline
 without putting the whole balance at risk.
 
-A limit is a ceiling on the shared balance, not a separate wallet. Three keys
-limited to $10 do not reserve $30 between them, they each simply stop at $10.
-A key with no limit can use the whole balance.
+A limit allocates part of the one account balance to one key. The allocations
+compete: their unspent parts cannot add up to more than the balance, so you can
+never promise a key credit the account does not hold. Three keys limited to $10
+need $30 of balance between them.
+
+The money is not moved or escrowed. Each key simply stops at its own figure, and
+the balance is enforced independently underneath, so nothing can overdraw the
+account whatever the limits say. `client.allocation()` reports what is left to
+allocate.
 
 ```js
 // Create a capped key. The secret is on .key and is never shown again.
@@ -282,6 +288,21 @@ try {
   else throw e;
 }
 ```
+
+### Deleting a key for good
+
+Revoking stops a key but keeps its history, because a key that stopped and left
+no trace cannot be investigated. When the trace is no longer wanted, delete it:
+
+```js
+await client.revokeKey(key.id);   // stops working, still listed, history kept
+await client.deleteKey(key.id);   // gone, with its activity log
+```
+
+Only a revoked key can be deleted, so one misclick never destroys the audit
+trail of a key that is still serving traffic. The account ledger is untouched
+either way: that is the record of money that actually moved, and it belongs to
+the account rather than the key.
 
 ### Exporting a key's history
 

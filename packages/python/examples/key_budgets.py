@@ -6,8 +6,14 @@ The problem this solves: you want to hand a key to a side project, a contractor,
 or a CI pipeline without risking your whole balance. Give that key a cap. It
 stops working at that amount; every other key on the account carries on.
 
-The cap is a ceiling on the shared balance, not a separate wallet. Three keys
-capped at $10 do not reserve $30 between them; they each simply stop at $10.
+A cap allocates part of the one account balance to one key. The allocations
+compete: their unspent parts cannot add up to more than the balance, so you can
+never promise a key credit the account does not hold. Three keys capped at $10
+need $30 of balance between them.
+
+The money is not moved or escrowed. Each key simply stops at its own figure, and
+the balance is enforced independently underneath, so nothing can overdraw the
+account whatever the caps say.
 
 Usage:
     export SILKLLM_API_KEY=silk_your_key_here
