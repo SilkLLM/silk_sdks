@@ -27,3 +27,9 @@ const client = new SilkLLM({ apiKey: "silk_..." });
 const response = await client.generate({ messages: [{ role: "user", content: "Hello!" }] });
 console.log(response.content);
 ```
+
+## Cookbooks
+
+Runnable, production-shaped examples in [`cookbooks/`](./cookbooks): a
+multimodal generation pipeline, and provisioning a spend-capped key for an
+autonomous agent.
